@@ -35,7 +35,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
         with:
           toolchain: '1.75.0'
-      - uses: subosito/flutter-action@2783a3f08e1baf891508463f8c696479add0b2
+      - uses: subosito/flutter-action@2783a3f08e1baf891508463f8c6653c258246225
         with:
           flutter-version: '3.24.5'
       - name: Prepare Windows Flutter engine
