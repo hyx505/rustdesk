@@ -1,0 +1,61 @@
+name: PersonalRemote Windows x64
+
+on:
+  push:
+    branches: [personal/main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: personal-windows-x64
+  cancel-in-progress: false
+
+jobs:
+  bridge:
+    uses: ./.github/workflows/bridge.yml
+
+  windows:
+    needs: bridge
+    runs-on: windows-2022
+    env:
+      VCPKG_DEFAULT_HOST_TRIPLET: x64-windows-static
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: bridge-artifact
+          path: .
+      - uses: KyleMayes/install-llvm-action@ebc0426251bc40c7cd31162802432c68818ab8f0
+        with:
+          version: '15.0.6'
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+        with:
+          toolchain: '1.75.0'
+      - uses: subosito/flutter-action@2783a3f08e1baf891508463f8c696479add0b2
+        with:
+          flutter-version: '3.24.5'
+      - name: Prepare Windows Flutter engine
+        shell: pwsh
+        run: |
+          flutter precache --windows
+          $flutterRoot = Split-Path (Split-Path (Get-Command flutter).Source)
+          Invoke-WebRequest -Uri https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip -OutFile engine.zip
+          Expand-Archive engine.zip -DestinationPath engine
+          Copy-Item engine/* "$flutterRoot/bin/cache/artifacts/engine/windows-x64-release" -Force -Recurse
+          git -C $flutterRoot apply "$pwd/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff"
+      - uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2
+        with:
+          vcpkgDirectory: C:\vcpkg
+          vcpkgGitCommitId: 9e593bb18ea69cc5095e012465dcd675a822ed0d
+      - name: Build Windows x64
+        shell: bash
+        run: |
+          "$VCPKG_ROOT/vcpkg" install --triplet x64-windows-static --x-install-root="$VCPKG_ROOT/installed"
+          python build.py --portable --flutter --skip-portable-pack --hwcodec --vram
+      - name: Check Flutter tests
+        working-directory: flutter
+        run: flutter test
