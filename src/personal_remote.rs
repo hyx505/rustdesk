@@ -1,9 +1,10 @@
 use base::config::keys;
 use hbb_common::{anyhow::Context, bail, config, ResultType};
+use serde_derive::Deserialize;
 
 pub(crate) const PROFILE_NAME: &str = "PersonalRemote.server.json";
 
-#[derive(serde::Deserialize)]
+#[derive(Deserialize)]
 struct ServerProfile {
     id_server: String,
     #[serde(default)]
@@ -22,6 +23,12 @@ pub(crate) fn configure() -> ResultType<()> {
     }
 
     *config::APP_NAME.write().unwrap() = "PersonalRemote".to_owned();
+    if config::Config::get_id_or(String::new()).is_empty() {
+        // The upstream desktop default is derived from the network adapter,
+        // which would give both applications the same ID on the same server.
+        let id = format!("1{}", config::Config::get_auto_numeric_password(9));
+        config::Config::set_id(&id);
+    }
     config::OVERWRITE_LOCAL_SETTINGS
         .write()
         .unwrap()
