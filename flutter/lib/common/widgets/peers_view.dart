@@ -452,13 +452,15 @@ abstract class BasePeersView extends StatelessWidget {
 
 class RecentPeersView extends BasePeersView {
   RecentPeersView(
-      {Key? key, EdgeInsets? menuPadding, ScrollController? scrollController})
+      {Key? key, EdgeInsets? menuPadding, ScrollController? scrollController,
+      bool showConnect = false})
       : super(
           key: key,
           peerTabIndex: PeerTabIndex.recent,
           peerCardBuilder: (Peer peer) => RecentPeerCard(
             peer: peer,
             menuPadding: menuPadding,
+            showConnect: showConnect,
           ),
         );
 
@@ -472,13 +474,18 @@ class RecentPeersView extends BasePeersView {
 
 class FavoritePeersView extends BasePeersView {
   FavoritePeersView(
-      {Key? key, EdgeInsets? menuPadding, ScrollController? scrollController})
+      {Key? key, EdgeInsets? menuPadding, ScrollController? scrollController,
+      PeerFilter? filter, bool showConnect = false,
+      void Function(BuildContext, Peer)? onMoveToGroup})
       : super(
           key: key,
           peerTabIndex: PeerTabIndex.fav,
+          peerFilter: filter,
           peerCardBuilder: (Peer peer) => FavoritePeerCard(
             peer: peer,
             menuPadding: menuPadding,
+            showConnect: showConnect,
+            onMoveToGroup: onMoveToGroup,
           ),
         );
 
@@ -492,13 +499,16 @@ class FavoritePeersView extends BasePeersView {
 
 class DiscoveredPeersView extends BasePeersView {
   DiscoveredPeersView(
-      {Key? key, EdgeInsets? menuPadding, ScrollController? scrollController})
+      {Key? key, EdgeInsets? menuPadding, ScrollController? scrollController,
+      bool showConnect = false, void Function(BuildContext, Peer)? onWake})
       : super(
           key: key,
           peerTabIndex: PeerTabIndex.lan,
           peerCardBuilder: (Peer peer) => DiscoveredPeerCard(
             peer: peer,
             menuPadding: menuPadding,
+            showConnect: showConnect,
+            onWake: onWake,
           ),
         );
 

@@ -47,6 +47,13 @@ pub fn core_main() -> Option<CoreMainAction> {
         return None;
     }
     crate::load_custom_client();
+    #[cfg(all(windows, feature = "flutter"))]
+    if let Err(error) = crate::personal_remote::configure() {
+        if !std::env::args().any(|arg| arg == "--service" || arg == "--server") {
+            crate::platform::message_box(&error.to_string());
+        }
+        return Some(CoreMainAction::ExitFailure(error));
+    }
     #[cfg(windows)]
     if !crate::platform::windows::bootstrap() {
         // return None to terminate the process

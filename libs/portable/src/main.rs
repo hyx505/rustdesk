@@ -283,7 +283,13 @@ fn main() -> Result<(), String> {
         }
         i += 1;
     }
-    let click_setup = args.is_empty() && arg_exe.to_lowercase().ends_with("install.exe");
+    let file_name = Path::new(&arg_exe)
+        .file_name()
+        .map(|name| name.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    let click_setup = args.is_empty()
+        && (file_name.ends_with("install.exe")
+            || (file_name.starts_with("personalremote-") && file_name.ends_with("-windows-x64.exe")));
     #[cfg(windows)]
     let quick_support = args.is_empty() && win::is_quick_support_exe(&arg_exe);
     #[cfg(not(windows))]
@@ -321,7 +327,7 @@ mod win {
 
     // Used for privacy mode(magnifier impl).
     pub const RUNTIME_BROKER_EXE: &'static str = "C:\\Windows\\System32\\RuntimeBroker.exe";
-    pub const WIN_TOPMOST_INJECTED_PROCESS_EXE: &'static str = "RuntimeBroker_rustdesk.exe";
+    pub const WIN_TOPMOST_INJECTED_PROCESS_EXE: &'static str = "RuntimeBroker_personalremote.exe";
 
     pub(super) fn schedule_verified_update_cleanup() -> std::io::Result<()> {
         use windows::{
@@ -364,7 +370,7 @@ mod win {
             }
         }
         let _allow_err = Command::new("taskkill")
-            .args(&["/F", "/IM", "RuntimeBroker_rustdesk.exe"])
+            .args(&["/F", "/IM", WIN_TOPMOST_INJECTED_PROCESS_EXE])
             .creation_flags(winapi::um::winbase::CREATE_NO_WINDOW)
             .output();
         let _allow_err = std::fs::copy(src, &format!("{}\\{}", dir.to_string_lossy(), tgt));

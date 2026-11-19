@@ -802,8 +802,12 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
 
   Widget _buildToolbar(
       BuildContext context, _ToolbarEdge edge, bool isHorizontal) {
+    final personal = isWindows && bind.mainGetAppNameSync() == 'PersonalRemote';
     final List<Widget> toolbarItems = [];
     toolbarItems.add(_PinMenu(state: widget.state));
+    if (personal && isHorizontal) {
+      toolbarItems.add(_PersonalSessionStatus(id: widget.id, ffi: widget.ffi));
+    }
     toolbarItems.add(Obx(() {
       final privacyModeState = PrivacyModeState.find(widget.id);
       if ((privacyModeState.isEmpty ||
@@ -842,6 +846,20 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
       state: widget.state,
       setFullscreen: _setFullscreen,
     ));
+    if (personal && widget.ffi.connType == ConnType.defaultConn) {
+      toolbarItems.add(_PersonalSessionFileButton(id: widget.id, ffi: widget.ffi));
+      toolbarItems.add(_PersonalPrivacyButton(id: widget.id, ffi: widget.ffi));
+      toolbarItems.add(Obx(() {
+        final fullscreen = stateGlobal.fullscreen.isTrue;
+        return _IconMenuButton(
+          icon: Icon(fullscreen ? Icons.fullscreen_exit : Icons.fullscreen, size: 20),
+          tooltip: fullscreen ? 'Exit Fullscreen' : 'Fullscreen',
+          color: _ToolbarTheme.blueColor,
+          hoverColor: _ToolbarTheme.hoverBlueColor,
+          onPressed: () => _setFullscreen(!fullscreen),
+        );
+      }));
+    }
     // Do not show keyboard for camera connection type.
     if (widget.ffi.connType == ConnType.defaultConn) {
       toolbarItems.add(_KeyboardMenu(id: widget.id, ffi: widget.ffi));
@@ -1782,7 +1800,8 @@ class _DisplayMenuState extends State<_DisplayMenu> {
       ];
       // privacy mode
       final privacyModeState = PrivacyModeState.find(id);
-      if (ffi.connType == ConnType.defaultConn &&
+      if (!(isWindows && bind.mainGetAppNameSync() == 'PersonalRemote') &&
+          ffi.connType == ConnType.defaultConn &&
           (pi.features.privacyMode || privacyModeState.isNotEmpty) &&
           (ffiModel.keyboard || privacyModeState.isNotEmpty)) {
         final privacyModeList =
@@ -1966,6 +1985,7 @@ class _DisplayMenuState extends State<_DisplayMenu> {
   }
 
   imageQuality() {
+    final personal = isWindows && bind.mainGetAppNameSync() == 'PersonalRemote';
     return futureBuilder(
         future: toolbarImageQuality(context, widget.id, widget.ffi),
         hasData: (data) {
@@ -1978,7 +1998,14 @@ class _DisplayMenuState extends State<_DisplayMenu> {
                     value: e.value,
                     groupValue: e.groupValue,
                     onChanged: e.onChanged,
-                    child: e.child,
+                    child: personal
+                        ? Text(switch (e.value) {
+                            kRemoteImageQualityLow => '流畅',
+                            kRemoteImageQualityBalanced => '均衡',
+                            kRemoteImageQualityBest => '清晰',
+                            _ => '高级自定义',
+                          })
+                        : e.child,
                     ffi: ffi))
                 .toList(),
           );
@@ -2995,6 +3022,111 @@ class _RecordMenu extends StatelessWidget {
       hoverColor: recordingModel.start
           ? _ToolbarTheme.hoverRedColor
           : _ToolbarTheme.hoverBlueColor,
+    );
+  }
+}
+
+class _PersonalSessionStatus extends StatelessWidget {
+  const _PersonalSessionStatus({required this.id, required this.ffi});
+
+  final String id;
+  final FFI ffi;
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      final connection = ConnectionTypeState.find(id);
+      final route = !connection.isValid()
+          ? '连接中'
+          : connection.direct.value == ConnectionType.strDirect
+              ? '直连'
+              : '中继';
+      return ListenableBuilder(
+        listenable: ffi.qualityMonitorModel,
+        builder: (context, _) {
+          final name = ffi.ffiModel.pi.hostname;
+          final fps = ffi.qualityMonitorModel.data.fps;
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            constraints: const BoxConstraints(maxWidth: 130),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(name.isEmpty ? id : name, overflow: TextOverflow.ellipsis),
+                Text(fps == null ? route : '$route · $fps FPS',
+                    style: Theme.of(context).textTheme.labelSmall,
+                    overflow: TextOverflow.ellipsis),
+              ],
+            ),
+          );
+        },
+      );
+    });
+  }
+}
+
+class _PersonalSessionFileButton extends StatelessWidget {
+  const _PersonalSessionFileButton({required this.id, required this.ffi});
+
+  final String id;
+  final FFI ffi;
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      final connected = ConnectionTypeState.find(id).isValid();
+      return ListenableBuilder(
+        listenable: ffi.ffiModel,
+        builder: (context, _) {
+          final allowed = connected && ffi.ffiModel.permissions['file'] != false;
+          return _IconMenuButton(
+            icon: const Icon(Icons.folder_open_outlined, size: 18),
+            tooltip: allowed ? 'Transfer file' : 'File transfer is not available',
+            color: _ToolbarTheme.blueColor,
+            hoverColor: _ToolbarTheme.hoverBlueColor,
+            onPressed: allowed ? () => connect(context, id, isFileTransfer: true) : null,
+          );
+        },
+      );
+    });
+  }
+}
+
+class _PersonalPrivacyButton extends StatelessWidget {
+  const _PersonalPrivacyButton({required this.id, required this.ffi});
+
+  final String id;
+  final FFI ffi;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: ffi.ffiModel,
+      builder: (context, _) => Obx(() {
+        final state = PrivacyModeState.find(id);
+        final available = ffi.ffiModel.pi.features.privacyMode;
+        if (!state.isNotEmpty &&
+            (!available || !ffi.ffiModel.keyboard ||
+                ffi.ffiModel.permissions['privacy_mode'] == false)) {
+          return const SizedBox.shrink();
+        }
+        return _IconSubmenuButton(
+          tooltip: 'Privacy mode',
+          icon: const Icon(Icons.shield_outlined, size: 18),
+          ffi: ffi,
+          color: _ToolbarTheme.blueColor,
+          hoverColor: _ToolbarTheme.hoverBlueColor,
+          menuChildrenGetter: (_) => toolbarPrivacyMode(state, context, id, ffi)
+              .map((item) => CkbMenuButton(
+                    value: item.value,
+                    onChanged: item.onChanged,
+                    child: item.child,
+                    ffi: ffi,
+                  ))
+              .toList(),
+        );
+      }),
     );
   }
 }

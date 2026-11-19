@@ -4,6 +4,9 @@ fn main() {
         use std::io::Write;
         let mut res = winres::WindowsResource::new();
         res.set_icon("../../res/icon.ico")
+            .set("ProductName", "PersonalRemote")
+            .set("FileDescription", "PersonalRemote Setup")
+            .set("ProductVersion", "0.1.0")
             .set_language(winapi::um::winnt::MAKELANGID(
                 winapi::um::winnt::LANG_ENGLISH,
                 winapi::um::winnt::SUBLANG_ENGLISH_US,

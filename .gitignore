@@ -60,3 +60,6 @@ flutter/web/
 /third_party/libdrmtap/
 # Local git worktrees
 .worktrees/
+/.personal-remote.json
+/dist/personal-remote/
+!/flutter/assets/personal_remote.png

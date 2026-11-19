@@ -31,12 +31,14 @@ class _PeerCard extends StatefulWidget {
   final PeerTabIndex tab;
   final Function(BuildContext, String) connect;
   final PopupMenuEntryBuilder popupMenuEntryBuilder;
+  final bool showConnect;
 
   const _PeerCard(
       {required this.peer,
       required this.tab,
       required this.connect,
       required this.popupMenuEntryBuilder,
+      this.showConnect = false,
       Key? key})
       : super(key: key);
 
@@ -236,6 +238,7 @@ class _PeerCardState extends State<_PeerCard>
                     ],
                   ).marginOnly(top: 2),
                 ),
+                if (widget.showConnect) _connectButton(peer),
                 isPortrait
                     ? checkBoxOrActionMorePortrait(peer)
                     : checkBoxOrActionMoreLandscape(peer, isTile: true),
@@ -376,6 +379,7 @@ class _PeerCardState extends State<_PeerCard>
                           style: Theme.of(context).textTheme.titleSmall,
                         )),
                       ]).paddingSymmetric(vertical: 8)),
+                      if (widget.showConnect) _connectButton(peer),
                       checkBoxOrActionMoreLandscape(peer, isTile: false),
                     ],
                   ).paddingSymmetric(horizontal: 12.0),
@@ -411,6 +415,15 @@ class _PeerCardState extends State<_PeerCard>
             ),
           )
       ]),
+    );
+  }
+
+  Widget _connectButton(Peer peer) {
+    return IconButton(
+      tooltip: translate('Connect'),
+      icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+      onPressed: () => widget.connect(context, peer.id),
+      visualDensity: VisualDensity.compact,
     );
   }
 
@@ -541,9 +554,11 @@ abstract class BasePeerCard extends StatelessWidget {
   final Peer peer;
   final PeerTabIndex tab;
   final EdgeInsets? menuPadding;
+  final bool showConnect;
 
   BasePeerCard(
-      {required this.peer, required this.tab, this.menuPadding, Key? key})
+      {required this.peer, required this.tab, this.menuPadding,
+      this.showConnect = false, Key? key})
       : super(key: key);
 
   @override
@@ -554,6 +569,7 @@ abstract class BasePeerCard extends StatelessWidget {
       connect: (BuildContext context, String id) =>
           connectInPeerTab(context, peer, tab),
       popupMenuEntryBuilder: _buildPopupMenuEntry,
+      showConnect: showConnect,
     );
   }
 
@@ -1064,11 +1080,13 @@ abstract class BasePeerCard extends StatelessWidget {
 }
 
 class RecentPeerCard extends BasePeerCard {
-  RecentPeerCard({required Peer peer, EdgeInsets? menuPadding, Key? key})
+  RecentPeerCard({required Peer peer, EdgeInsets? menuPadding,
+      bool showConnect = false, Key? key})
       : super(
             peer: peer,
             tab: PeerTabIndex.recent,
             menuPadding: menuPadding,
+            showConnect: showConnect,
             key: key);
 
   @override
@@ -1109,11 +1127,15 @@ class RecentPeerCard extends BasePeerCard {
 }
 
 class FavoritePeerCard extends BasePeerCard {
-  FavoritePeerCard({required Peer peer, EdgeInsets? menuPadding, Key? key})
+  final void Function(BuildContext, Peer)? onMoveToGroup;
+
+  FavoritePeerCard({required Peer peer, EdgeInsets? menuPadding,
+      this.onMoveToGroup, bool showConnect = false, Key? key})
       : super(
             peer: peer,
             tab: PeerTabIndex.fav,
             menuPadding: menuPadding,
+            showConnect: showConnect,
             key: key);
 
   @override
@@ -1133,6 +1155,15 @@ class FavoritePeerCard extends BasePeerCard {
     menuItems.add(_rmFavAction(peer.id, () async {
       await bind.mainLoadFavPeers();
     }));
+    final move = onMoveToGroup;
+    if (move != null) {
+      menuItems.add(MenuEntryButton<String>(
+        childBuilder: (style) => Text('移到分组', style: style),
+        proc: () => move(context, peer),
+        padding: menuPadding,
+        dismissOnClicked: true,
+      ));
+    }
 
     if (gFFI.userModel.userName.isNotEmpty) {
       menuItems.add(_addToAb(peer));
@@ -1149,11 +1180,15 @@ class FavoritePeerCard extends BasePeerCard {
 }
 
 class DiscoveredPeerCard extends BasePeerCard {
-  DiscoveredPeerCard({required Peer peer, EdgeInsets? menuPadding, Key? key})
+  final void Function(BuildContext, Peer)? onWake;
+
+  DiscoveredPeerCard({required Peer peer, EdgeInsets? menuPadding,
+      this.onWake, bool showConnect = false, Key? key})
       : super(
             peer: peer,
             tab: PeerTabIndex.lan,
             menuPadding: menuPadding,
+            showConnect: showConnect,
             key: key);
 
   @override
@@ -1163,7 +1198,17 @@ class DiscoveredPeerCard extends BasePeerCard {
 
     final menuItems = await _buildConnectionMenuItems(context);
     menuItems.add(MenuEntryDivider());
-    menuItems.add(_wolAction(peer.id));
+    final wake = onWake;
+    if (wake == null) {
+      menuItems.add(_wolAction(peer.id));
+    } else if (peer.canWake && !peer.online) {
+      menuItems.add(MenuEntryButton<String>(
+        childBuilder: (style) => Text('局域网唤醒', style: style),
+        proc: () => wake(context, peer),
+        padding: menuPadding,
+        dismissOnClicked: true,
+      ));
+    }
     if (isWindows) {
       menuItems.add(_createShortCutAction(peer.id));
     }

@@ -18,6 +18,7 @@ class Peer {
   String rdpPort;
   String rdpUsername;
   bool online = false;
+  final bool canWake;
   String loginName; //login username
   String device_group_name;
   String note;
@@ -38,6 +39,7 @@ class Peer {
         hostname = json['hostname'] ?? '',
         platform = json['platform'] ?? '',
         alias = json['alias'] ?? '',
+        canWake = json['can_wake'] == 'true',
         tags = json['tags'] ?? [],
         forceAlwaysRelay = json['forceAlwaysRelay'] == 'true',
         rdpPort = json['rdpPort'] ?? '',
@@ -108,6 +110,7 @@ class Peer {
     required this.loginName,
     required this.device_group_name,
     required this.note,
+    this.canWake = false,
     this.sameServer,
   });
 
@@ -142,6 +145,7 @@ class Peer {
         rdpUsername == other.rdpUsername &&
         device_group_name == other.device_group_name &&
         loginName == other.loginName &&
+        canWake == other.canWake &&
         note == other.note;
   }
 
@@ -161,6 +165,7 @@ class Peer {
         loginName: other.loginName,
         device_group_name: other.device_group_name,
         note: other.note,
+        canWake: other.canWake,
         sameServer: other.sameServer);
     peer.online = other.online;
     return peer;

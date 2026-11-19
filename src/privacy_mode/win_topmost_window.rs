@@ -30,6 +30,9 @@ use winapi::{
 pub(super) const PRIVACY_MODE_IMPL: &str = "privacy_mode_impl_mag";
 
 pub const ORIGIN_PROCESS_EXE: &'static str = "C:\\Windows\\System32\\RuntimeBroker.exe";
+#[cfg(feature = "flutter")]
+pub const WIN_TOPMOST_INJECTED_PROCESS_EXE: &'static str = "RuntimeBroker_personalremote.exe";
+#[cfg(not(feature = "flutter"))]
 pub const WIN_TOPMOST_INJECTED_PROCESS_EXE: &'static str = "RuntimeBroker_rustdesk.exe";
 pub const INJECTED_PROCESS_EXE: &'static str = WIN_TOPMOST_INJECTED_PROCESS_EXE;
 pub(super) const PRIVACY_WINDOW_CLASS: &'static str = "RustDeskPrivacyWindowClass";

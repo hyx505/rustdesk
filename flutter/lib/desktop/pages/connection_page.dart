@@ -7,6 +7,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common/widgets/connection_page_title.dart';
 import 'package:flutter_hbb/consts.dart';
+import 'package:flutter_hbb/desktop/widgets/personal_devices.dart';
 import 'package:flutter_hbb/desktop/widgets/popup_menu.dart';
 import 'package:flutter_hbb/models/state_model.dart';
 import 'package:get/get.dart';
@@ -189,7 +190,11 @@ class _OnlineStatusWidgetState extends State<OnlineStatusWidget> {
 
 /// Connection page for connecting to a remote peer.
 class ConnectionPage extends StatefulWidget {
-  const ConnectionPage({Key? key}) : super(key: key);
+  const ConnectionPage({Key? key, this.personalLayout = false, this.localAssistance})
+      : super(key: key);
+
+  final bool personalLayout;
+  final Widget? localAssistance;
 
   @override
   State<ConnectionPage> createState() => _ConnectionPageState();
@@ -224,7 +229,7 @@ class _ConnectionPageState extends State<ConnectionPage>
     if (_idController.text.isEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         final lastRemoteId = await bind.mainGetLastRemoteId();
-        if (lastRemoteId != _idController.id) {
+        if (mounted && lastRemoteId != _idController.id) {
           setState(() {
             _idController.id = lastRemoteId;
           });
@@ -303,6 +308,18 @@ class _ConnectionPageState extends State<ConnectionPage>
 
   @override
   Widget build(BuildContext context) {
+    if (widget.personalLayout) {
+      final local = widget.localAssistance;
+      return Column(
+        children: [
+          Expanded(child: local == null
+              ? const PersonalDevices()
+              : _buildPersonalAssistance(context, local)),
+          const Divider(height: 1),
+          const OnlineStatusWidget(),
+        ],
+      );
+    }
     final isOutgoingOnly = bind.isOutgoingOnly();
     return Column(
       children: [
@@ -321,6 +338,45 @@ class _ConnectionPageState extends State<ConnectionPage>
         ).paddingOnly(left: 12.0)),
         if (!isOutgoingOnly) const Divider(height: 1),
         if (!isOutgoingOnly) OnlineStatusWidget()
+      ],
+    );
+  }
+
+  Widget _buildPersonalAssistance(BuildContext context, Widget local) {
+    Widget panel(Widget body) => Card(
+      margin: EdgeInsets.zero,
+      child: Padding(padding: const EdgeInsets.all(16), child: body),
+    );
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: [
+        Text('远程协助', style: Theme.of(context).textTheme.headlineSmall),
+        const SizedBox(height: 16),
+        LayoutBuilder(builder: (context, constraints) {
+          final incoming = panel(local);
+          final outgoing = panel(Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('连接对方', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 12),
+              _buildRemoteIDTextField(context),
+            ],
+          ));
+          if (constraints.maxWidth < 575) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [incoming, const SizedBox(height: 12), outgoing],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: incoming),
+              const SizedBox(width: 12),
+              Expanded(flex: 2, child: outgoing),
+            ],
+          );
+        }),
       ],
     );
   }

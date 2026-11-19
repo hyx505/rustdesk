@@ -75,7 +75,8 @@ class DesktopSettingPage extends StatefulWidget {
         bind.mainGetBuildinOption(key: kOptionHideNetworkSetting) != 'Y')
       SettingsTabKey.network,
     if (!bind.isIncomingOnly()) SettingsTabKey.display,
-    if (!bind.isDisableAccount()) SettingsTabKey.account,
+    if (!bind.isDisableAccount() && bind.mainGetAppNameSync() != 'PersonalRemote')
+      SettingsTabKey.account,
     if (isWindows &&
         !bind.isDisableSettings() &&
         bind.mainGetBuildinOption(key: kOptionHideRemotePrinterSetting) != 'Y')
@@ -2593,9 +2594,10 @@ class _AboutState extends State<_About> {
       final myId = data['myId'].toString();
       const linkStyle = TextStyle(decoration: TextDecoration.underline);
       final scrollController = ScrollController();
+      final personal = bind.mainGetAppNameSync() == 'PersonalRemote';
       return SingleChildScrollView(
         controller: scrollController,
-        child: _Card(title: translate('About RustDesk'), children: [
+        child: _Card(title: personal ? '关于自用远控' : translate('About RustDesk'), children: [
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -2603,7 +2605,7 @@ class _AboutState extends State<_About> {
                 height: 8.0,
               ),
               SelectionArea(
-                  child: Text('${translate('Version')}: $version')
+                  child: Text(personal ? '0.1.0 · 基于 RustDesk $version' : '${translate('Version')}: $version')
                       .marginSymmetric(vertical: 4.0)),
               SelectionArea(
                   child: Text('${translate('Build Date')}: $buildDate')
@@ -2615,7 +2617,7 @@ class _AboutState extends State<_About> {
               SelectionArea(
                   child: Text('${translate('ID')}: $myId')
                       .marginSymmetric(vertical: 4.0)),
-              InkWell(
+              if (!personal) InkWell(
                   onTap: () {
                     launchUrlString('https://rustdesk.com/privacy.html');
                   },
@@ -2625,10 +2627,12 @@ class _AboutState extends State<_About> {
                   ).marginSymmetric(vertical: 4.0)),
               InkWell(
                   onTap: () {
-                    launchUrlString('https://rustdesk.com');
+                    launchUrlString(personal
+                        ? 'https://github.com/hyx505/rustdesk/tree/personal/main'
+                        : 'https://rustdesk.com');
                   },
                   child: Text(
-                    translate('Website'),
+                    personal ? '源代码与许可证' : translate('Website'),
                     style: linkStyle,
                   ).marginSymmetric(vertical: 4.0)),
               Container(
@@ -2646,7 +2650,7 @@ class _AboutState extends State<_About> {
                             'Copyright © ${DateTime.now().toString().substring(0, 4)} Purslane Tech Pte. Ltd.\n$license',
                             style: const TextStyle(color: Colors.white),
                           ),
-                          Text(
+                          if (!personal) Text(
                             translate('Slogan_tip'),
                             style: TextStyle(
                                 fontWeight: FontWeight.w800,

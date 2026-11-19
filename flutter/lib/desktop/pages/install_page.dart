@@ -163,7 +163,9 @@ class _InstallPageBodyState extends State<_InstallPageBody>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(translate('Installation'),
+              Text(bind.mainGetAppNameSync() == 'PersonalRemote'
+                      ? '安装自用远控'
+                      : translate('Installation'),
                   style: Theme.of(context).textTheme.headlineMedium),
               Table(
                 columnWidths: const {

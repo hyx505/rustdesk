@@ -7,16 +7,20 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: personal-windows-x64
-  cancel-in-progress: false
-
 jobs:
   bridge:
     uses: ./.github/workflows/bridge.yml
 
+  privacy-helper:
+    uses: ./.github/workflows/third-party-RustDeskTempTopMostWindow.yml
+    with:
+      target: windows-2022
+      platform: x64
+      configuration: Release
+      target_version: Windows10
+
   windows:
-    needs: bridge
+    needs: [bridge, privacy-helper]
     runs-on: windows-2022
     env:
       VCPKG_DEFAULT_HOST_TRIPLET: x64-windows-static
@@ -29,6 +33,13 @@ jobs:
         with:
           name: bridge-artifact
           path: .
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: topmostwindow-artifacts-x64
+          path: privacy-helper
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
       - uses: KyleMayes/install-llvm-action@ebc0426251bc40c7cd31162802432c68818ab8f0
         with:
           version: '15.0.6'
@@ -56,6 +67,15 @@ jobs:
         run: |
           "$VCPKG_ROOT/vcpkg" install --triplet x64-windows-static --x-install-root="$VCPKG_ROOT/installed"
           python build.py --portable --flutter --skip-portable-pack --hwcodec --vram
+      - name: Prepare the local packaging template
+        run: |
+          python -m pip install -r libs/portable/requirements.txt
+          python res/personal_remote.py make-template --privacy-helper privacy-helper/WindowInjection.dll
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: PersonalRemote-windows-x64-template
+          path: dist/personal-remote/template/*
+          if-no-files-found: error
       - name: Check Flutter tests
         working-directory: flutter
         run: flutter test

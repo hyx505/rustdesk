@@ -54,11 +54,16 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   final RxBool _block = false.obs;
 
   final GlobalKey _childKey = GlobalKey();
+  bool _showAssistance = false;
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
     final isIncomingOnly = bind.isIncomingOnly();
+    if (isWindows && !isIncomingOnly && !bind.isOutgoingOnly() &&
+        bind.mainGetAppNameSync() == 'PersonalRemote') {
+      return _buildBlock(child: _personalHome(context));
+    }
     return _buildBlock(
         child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -68,6 +73,129 @@ class _DesktopHomePageState extends State<DesktopHomePage>
         if (!isIncomingOnly) Expanded(child: buildRightPane(context)),
       ],
     ));
+  }
+
+  Widget _personalHome(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          width: 126,
+          color: scheme.surface,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+          child: Column(
+            children: [
+              Image.asset('assets/personal_remote.png', width: 42, height: 42),
+              const SizedBox(height: 6),
+              Text('自用远控', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 18),
+              _personalNavItem(Icons.devices_outlined, '我的设备', !_showAssistance,
+                  () => setState(() => _showAssistance = false)),
+              _personalNavItem(Icons.support_agent_outlined, '远程协助', _showAssistance,
+                  () => setState(() => _showAssistance = true)),
+              if (!bind.isDisableSettings())
+                _personalNavItem(Icons.settings_outlined, '设置', false,
+                    DesktopTabPage.onAddSetting),
+            ],
+          ),
+        ),
+        const VerticalDivider(width: 1),
+        Expanded(
+          child: ConnectionPage(
+            personalLayout: true,
+            localAssistance: _showAssistance ? _personalLocalAssistance() : null,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _personalNavItem(
+      IconData icon, String label, bool selected, VoidCallback onTap) {
+    final scheme = Theme.of(context).colorScheme;
+    return ListTile(
+      dense: true,
+      horizontalTitleGap: 8,
+      minLeadingWidth: 18,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      leading: Icon(icon, size: 18),
+      title: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+      selected: selected,
+      selectedTileColor: scheme.primaryContainer,
+      selectedColor: scheme.onPrimaryContainer,
+      onTap: onTap,
+    );
+  }
+
+  Widget _personalLocalAssistance() {
+    return ListenableBuilder(
+      listenable: gFFI.serverModel,
+      builder: (context, _) {
+        final model = gFFI.serverModel;
+        final canShowPassword = model.approveMode != 'click' &&
+            model.verificationMethod != kUsePermanentPassword;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('接受协助', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 12),
+            _personalCopyRow('本机设备 ID', model.serverId),
+            if (canShowPassword)
+              _personalCopyRow(
+                '临时验证码',
+                model.serverPasswd,
+                refresh: () => bind.mainUpdateTemporaryPassword(),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _personalCopyRow(String label, TextEditingController controller,
+      {VoidCallback? refresh}) {
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: controller,
+      builder: (context, value, _) {
+        final text = value.text.trim();
+        final available = text.isNotEmpty && text != '-' && text != '...';
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label, style: Theme.of(context).textTheme.labelMedium),
+                    SelectableText(available ? text : '—',
+                        style: Theme.of(context).textTheme.titleMedium),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: '复制$label',
+                onPressed: available
+                    ? () async {
+                        await Clipboard.setData(ClipboardData(text: text));
+                        showToast(translate('Copied'));
+                      }
+                    : null,
+                icon: const Icon(Icons.content_copy_rounded, size: 18),
+              ),
+              if (refresh != null)
+                IconButton(
+                  tooltip: '刷新验证码',
+                  onPressed: refresh,
+                  icon: const Icon(Icons.refresh_rounded, size: 20),
+                ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Widget _buildBlock({required Widget child}) {
