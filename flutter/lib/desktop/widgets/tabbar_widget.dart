@@ -245,6 +245,9 @@ class DesktopTab extends StatefulWidget {
   // Right click tab menu
   final TabMenuBuilder? tabMenuBuilder;
   final Widget? tail;
+  final Widget? leading;
+  final Widget? afterTabs;
+  final bool personalChrome;
   final Future<bool> Function()? onWindowCloseButton;
   final TabBuilder? tabBuilder;
   final LabelGetter? labelGetter;
@@ -270,6 +273,9 @@ class DesktopTab extends StatefulWidget {
     this.pageViewBuilder,
     this.tabMenuBuilder,
     this.tail,
+    this.leading,
+    this.afterTabs,
+    this.personalChrome = false,
     this.onWindowCloseButton,
     this.tabBuilder,
     this.labelGetter,
@@ -525,13 +531,23 @@ class _DesktopTabState extends State<DesktopTab>
         if (stateGlobal.showTabBar.isTrue &&
             !(kUseCompatibleUiMode && isHideSingleItem())) {
           final showBottomDivider = _showTabBarBottomDivider(tabType);
-          return SizedBox(
-            height: _kTabBarHeight,
+          final main = tabType == DesktopTabType.main;
+          final height =
+              widget.personalChrome ? (main ? 60.0 : 50.0) : _kTabBarHeight;
+          final dark = Theme.of(context).brightness == Brightness.dark;
+          return Container(
+            height: height,
+            color: !widget.personalChrome
+                ? null
+                : dark
+                    ? const Color(0xff20272d)
+                    : main
+                        ? const Color(0xffedf2f5)
+                        : const Color(0xffd5dbe0),
             child: Column(
               children: [
                 SizedBox(
-                  height:
-                      showBottomDivider ? _kTabBarHeight - 1 : _kTabBarHeight,
+                  height: showBottomDivider ? height - 1 : height,
                   child: _buildBar(),
                 ),
                 if (showBottomDivider)
@@ -604,10 +620,14 @@ class _DesktopTabState extends State<DesktopTab>
 
   Widget _buildBar() {
     final isIncomingHomePage = bind.isIncomingOnly() && isInHomePage();
+    final compact = widget.personalChrome &&
+        !isMainWindow &&
+        MediaQuery.sizeOf(context).width < 630;
     return Row(
       children: [
         Expanded(
             child: GestureDetector(
+                behavior: widget.personalChrome ? HitTestBehavior.opaque : null,
                 // custom double tap handler
                 onTap: !isIncomingHomePage && showMaximize
                     ? () {
@@ -620,7 +640,9 @@ class _DesktopTabState extends State<DesktopTab>
                               .then((value) => stateGlobal.setMaximized(value));
                         }
                       }
-                    : (isIncomingHomePage ? () {} : null), // Keep tap recognizer for Windows touch.
+                    : (isIncomingHomePage
+                        ? () {}
+                        : null), // Keep tap recognizer for Windows touch.
                 onPanStart: (_) => startDragging(isMainWindow),
                 onPanCancel: () {
                   // We want to disable dragging of the tab area in the tab bar.
@@ -641,25 +663,44 @@ class _DesktopTabState extends State<DesktopTab>
                         child: const SizedBox(
                           width: 78,
                         )),
-                    Offstage(
-                      offstage: kUseCompatibleUiMode || isMacOS,
-                      child: Row(children: [
-                        Offstage(
-                          offstage: !showLogo,
-                          child: loadIcon(16),
+                    if (widget.personalChrome)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 18, right: 12),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Image.asset('assets/personal_remote.png',
+                              width: 24, height: 24),
+                          if (widget.leading != null && !compact) ...[
+                            const SizedBox(width: 12),
+                            widget.leading!,
+                          ] else if (isMainWindow) ...[
+                            const SizedBox(width: 10),
+                            const Text('自用远控', style: TextStyle(fontSize: 14)),
+                          ],
+                        ]),
+                      )
+                    else
+                      Offstage(
+                        offstage: kUseCompatibleUiMode || isMacOS,
+                        child: Row(children: [
+                          Offstage(
+                            offstage: !showLogo,
+                            child: loadIcon(16),
+                          ),
+                          Offstage(
+                              offstage: !showTitle,
+                              child: const Text(
+                                "RustDesk",
+                                style: TextStyle(fontSize: 13),
+                              ).marginOnly(left: 2))
+                        ]).marginOnly(
+                          left: 5,
+                          right: 10,
                         ),
-                        Offstage(
-                            offstage: !showTitle,
-                            child: const Text(
-                              "RustDesk",
-                              style: TextStyle(fontSize: 13),
-                            ).marginOnly(left: 2))
-                      ]).marginOnly(
-                        left: 5,
-                        right: 10,
                       ),
-                    ),
-                    Expanded(
+                    Flexible(
+                        fit: widget.afterTabs != null
+                            ? FlexFit.loose
+                            : FlexFit.tight,
                         child: Listener(
                             // handle mouse wheel
                             onPointerSignal: (e) {
@@ -688,7 +729,9 @@ class _DesktopTabState extends State<DesktopTab>
                               unSelectedTabBackgroundColor:
                                   unSelectedTabBackgroundColor,
                               selectedBorderColor: selectedBorderColor,
+                              personalChrome: widget.personalChrome,
                             ))),
+                    if (widget.afterTabs != null && !compact) widget.afterTabs!,
                   ],
                 ))),
         // hide simulated action buttons when we in compatible ui mode, because of reusing system title bar.
@@ -938,6 +981,7 @@ class _ListView extends StatelessWidget {
   final Color? selectedTabBackgroundColor;
   final Color? selectedBorderColor;
   final Color? unSelectedTabBackgroundColor;
+  final bool personalChrome;
 
   Rx<DesktopTabState> get state => controller.state;
 
@@ -951,6 +995,7 @@ class _ListView extends StatelessWidget {
     this.selectedTabBackgroundColor,
     this.unSelectedTabBackgroundColor,
     this.selectedBorderColor,
+    required this.personalChrome,
   });
 
   /// Check whether to show ListView
@@ -1022,6 +1067,7 @@ class _ListView extends StatelessWidget {
                         MyTheme.tabbar(context).selectedTabBackgroundColor,
                     unSelectedTabBackgroundColor: unSelectedTabBackgroundColor,
                     selectedBorderColor: selectedBorderColor,
+                    personalChrome: personalChrome,
                   ),
                 );
                 return GestureDetector(
@@ -1049,6 +1095,7 @@ class _Tab extends StatefulWidget {
   final Color? selectedTabBackgroundColor;
   final Color? unSelectedTabBackgroundColor;
   final Color? selectedBorderColor;
+  final bool personalChrome;
 
   const _Tab({
     Key? key,
@@ -1068,6 +1115,7 @@ class _Tab extends StatefulWidget {
     this.selectedTabBackgroundColor,
     this.unSelectedTabBackgroundColor,
     this.selectedBorderColor,
+    required this.personalChrome,
   }) : super(key: key);
 
   @override
@@ -1156,6 +1204,39 @@ class _TabState extends State<_Tab> with RestorationMixin {
     bool showDivider =
         widget.index != widget.selected - 1 && widget.index != widget.selected;
     RxBool hover = restoreHover.value.obs;
+    if (widget.personalChrome) {
+      final dark = Theme.of(context).brightness == Brightness.dark;
+      const corners = BorderRadius.vertical(top: Radius.circular(12));
+      return Align(
+        alignment: Alignment.bottomCenter,
+        child: Material(
+          borderRadius: corners,
+          color: isSelected
+              ? (dark ? const Color(0xff34404a) : Colors.white)
+              : Colors.transparent,
+          child: InkWell(
+            borderRadius: corners,
+            onHover: (value) => hover.value = value,
+            onTap: widget.onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: SizedBox(
+                height: 41,
+                child: Row(
+                  children: [
+                    _buildTabContent(),
+                    Obx(() => _CloseButton(
+                        visible: hover.value && widget.closable,
+                        tabSelected: isSelected,
+                        onClose: widget.onClose)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return Ink(
       child: InkWell(
         onHover: (value) {

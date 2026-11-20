@@ -66,6 +66,10 @@ class RemotePage extends StatefulWidget {
   final SimpleWrapper<State<RemotePage>?> _lastState = SimpleWrapper(null);
   final DesktopTabController? tabController;
 
+  final topBarSession = Rxn<FFI>();
+  final connectionElapsed = Stopwatch();
+  final showExtraTools = false.obs;
+
   FFI get ffi => (_lastState.value! as _RemotePageState)._ffi;
 
   void releaseMacOSInputForTabTransfer() {
@@ -151,6 +155,11 @@ class _RemotePageState extends State<RemotePage>
   void initState() {
     super.initState();
     _ffi = FFI(widget.sessionId);
+    if (isPersonalRemoteWindows) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.topBarSession.value = _ffi;
+      });
+    }
     if (isMacOS) {
       // SchedulerBinding.instance.lifecycleState is null in the first connection in a new window.
       _macOSLifecycleState = SchedulerBinding.instance.lifecycleState;
@@ -160,6 +169,7 @@ class _RemotePageState extends State<RemotePage>
     }
     Get.put<FFI>(_ffi, tag: widget.id);
     _ffi.imageModel.addCallbackOnFirstImage((String peerId) {
+      if (isPersonalRemoteWindows) widget.connectionElapsed.start();
       _ffi.canvasModel.activateLocalCursor();
       showKBLayoutTypeChooserIfNeeded(
           _ffi.ffiModel.pi.platform, _ffi.dialogManager);
@@ -735,7 +745,7 @@ class _RemotePageState extends State<RemotePage>
       return Stack(
         children: [
           Container(
-              color: kColorCanvas,
+              color: isPersonalRemoteWindows ? Colors.black : kColorCanvas,
               child: RawKeyFocusScope(
                   focusNode: _rawKeyFocusNode,
                   onFocusChange: (bool imageFocused) {
@@ -785,13 +795,19 @@ class _RemotePageState extends State<RemotePage>
               // Use Overlay to enable rebuild every time on menu button click.
               // Hide toolbar when relative mouse mode is active to prevent
               // cursor from escaping to toolbar area.
-              Obx(() => _ffi.inputModel.relativeMouseMode.value
-                  ? const Offstage()
-                  : _ffi.ffiModel.pi.isSet.isTrue
-                      ? Overlay(initialEntries: [
-                          OverlayEntry(builder: remoteToolbar)
-                        ])
-                      : remoteToolbar(context)),
+              Obx(() {
+                if (_ffi.inputModel.relativeMouseMode.value ||
+                    (isPersonalRemoteWindows &&
+                        stateGlobal.showTabBar.isTrue &&
+                        widget.showExtraTools.isFalse)) {
+                  return const Offstage();
+                }
+                return _ffi.ffiModel.pi.isSet.isTrue
+                    ? Overlay(initialEntries: [
+                        OverlayEntry(builder: remoteToolbar),
+                      ])
+                    : remoteToolbar(context);
+              }),
               _ffi.ffiModel.pi.isSet.isFalse ? emptyOverlay() : Offstage(),
             ],
           ),

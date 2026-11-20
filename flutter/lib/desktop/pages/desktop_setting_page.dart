@@ -2605,7 +2605,7 @@ class _AboutState extends State<_About> {
                 height: 8.0,
               ),
               SelectionArea(
-                  child: Text(personal ? '0.1.0 · 基于 RustDesk $version' : '${translate('Version')}: $version')
+                  child: Text(personal ? '0.1.1 · 基于 RustDesk $version' : '${translate('Version')}: $version')
                       .marginSymmetric(vertical: 4.0)),
               SelectionArea(
                   child: Text('${translate('Build Date')}: $buildDate')

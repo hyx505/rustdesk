@@ -12,6 +12,7 @@ import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/desktop/pages/connection_page.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_setting_page.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_tab_page.dart';
+import 'package:flutter_hbb/desktop/widgets/personal_home.dart';
 import 'package:flutter_hbb/desktop/widgets/update_progress.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/models/server_model.dart';
@@ -54,15 +55,21 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   final RxBool _block = false.obs;
 
   final GlobalKey _childKey = GlobalKey();
-  bool _showAssistance = false;
+  bool _showAssistanceCode = false;
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
     final isIncomingOnly = bind.isIncomingOnly();
-    if (isWindows && !isIncomingOnly && !bind.isOutgoingOnly() &&
-        bind.mainGetAppNameSync() == 'PersonalRemote') {
-      return _buildBlock(child: _personalHome(context));
+    if (isPersonalRemoteWindows && !isIncomingOnly && !bind.isOutgoingOnly()) {
+      return _buildBlock(
+        child: PersonalHome(
+          assistance:
+              ConnectionPage(localAssistance: _personalLocalAssistance()),
+          openSettings:
+              bind.isDisableSettings() ? null : DesktopTabPage.onAddSetting,
+        ),
+      );
     }
     return _buildBlock(
         child: Row(
@@ -75,60 +82,6 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     ));
   }
 
-  Widget _personalHome(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Container(
-          width: 126,
-          color: scheme.surface,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
-          child: Column(
-            children: [
-              Image.asset('assets/personal_remote.png', width: 42, height: 42),
-              const SizedBox(height: 6),
-              Text('自用远控', style: Theme.of(context).textTheme.titleSmall),
-              const SizedBox(height: 18),
-              _personalNavItem(Icons.devices_outlined, '我的设备', !_showAssistance,
-                  () => setState(() => _showAssistance = false)),
-              _personalNavItem(Icons.support_agent_outlined, '远程协助', _showAssistance,
-                  () => setState(() => _showAssistance = true)),
-              if (!bind.isDisableSettings())
-                _personalNavItem(Icons.settings_outlined, '设置', false,
-                    DesktopTabPage.onAddSetting),
-            ],
-          ),
-        ),
-        const VerticalDivider(width: 1),
-        Expanded(
-          child: ConnectionPage(
-            personalLayout: true,
-            localAssistance: _showAssistance ? _personalLocalAssistance() : null,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _personalNavItem(
-      IconData icon, String label, bool selected, VoidCallback onTap) {
-    final scheme = Theme.of(context).colorScheme;
-    return ListTile(
-      dense: true,
-      horizontalTitleGap: 8,
-      minLeadingWidth: 18,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      leading: Icon(icon, size: 18),
-      title: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-      selected: selected,
-      selectedTileColor: scheme.primaryContainer,
-      selectedColor: scheme.onPrimaryContainer,
-      onTap: onTap,
-    );
-  }
-
   Widget _personalLocalAssistance() {
     return ListenableBuilder(
       listenable: gFFI.serverModel,
@@ -139,13 +92,16 @@ class _DesktopHomePageState extends State<DesktopHomePage>
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('接受协助', style: Theme.of(context).textTheme.titleMedium),
+            Text('本设备', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 12),
             _personalCopyRow('本机设备 ID', model.serverId),
             if (canShowPassword)
               _personalCopyRow(
                 '临时验证码',
                 model.serverPasswd,
+                mask: !_showAssistanceCode,
+                toggleVisibility: () =>
+                    setState(() => _showAssistanceCode = !_showAssistanceCode),
                 refresh: () => bind.mainUpdateTemporaryPassword(),
               ),
           ],
@@ -155,7 +111,9 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   }
 
   Widget _personalCopyRow(String label, TextEditingController controller,
-      {VoidCallback? refresh}) {
+      {VoidCallback? refresh,
+      VoidCallback? toggleVisibility,
+      bool mask = false}) {
     return ValueListenableBuilder<TextEditingValue>(
       valueListenable: controller,
       builder: (context, value, _) {
@@ -170,7 +128,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(label, style: Theme.of(context).textTheme.labelMedium),
-                    SelectableText(available ? text : '—',
+                    SelectableText(available ? (mask ? '••••••' : text) : '—',
                         style: Theme.of(context).textTheme.titleMedium),
                   ],
                 ),
@@ -185,6 +143,16 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                     : null,
                 icon: const Icon(Icons.content_copy_rounded, size: 18),
               ),
+              if (toggleVisibility != null)
+                IconButton(
+                  tooltip: mask ? '显示验证码' : '隐藏验证码',
+                  onPressed: toggleVisibility,
+                  icon: Icon(
+                      mask
+                          ? Icons.visibility_outlined
+                          : Icons.visibility_off_outlined,
+                      size: 18),
+                ),
               if (refresh != null)
                 IconButton(
                   tooltip: '刷新验证码',
@@ -897,7 +865,8 @@ class _DesktopHomePageState extends State<DesktopHomePage>
 
     bool isChattyMethod(String methodName) {
       switch (methodName) {
-        case kWindowBumpMouse: return true;
+        case kWindowBumpMouse:
+          return true;
       }
 
       return false;
@@ -906,7 +875,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     rustDeskWinManager.setMethodHandler((call, fromWindowId) async {
       if (!isChattyMethod(call.method)) {
         debugPrint(
-          "[Main] call ${call.method} with args ${call.arguments} from window $fromWindowId");
+            "[Main] call ${call.method} with args ${call.arguments} from window $fromWindowId");
       }
       if (call.method == kWindowMainWindowOnTop) {
         windowOnTop(null);
@@ -935,9 +904,8 @@ class _DesktopHomePageState extends State<DesktopHomePage>
           loginMethod: call.arguments['loginMethod'] ?? '',
         );
       } else if (call.method == kWindowBumpMouse) {
-        return RdPlatformChannel.instance.bumpMouse(
-          dx: call.arguments['dx'],
-          dy: call.arguments['dy']);
+        return RdPlatformChannel.instance
+            .bumpMouse(dx: call.arguments['dx'], dy: call.arguments['dy']);
       } else if (call.method == kWindowEventMoveTabToNewWindow) {
         final args = call.arguments.split(',');
         int? windowId;

@@ -2594,6 +2594,9 @@ connectMainDesktop(String id,
   }
 }
 
+bool get isPersonalRemoteWindows =>
+    isWindows && bind.mainGetAppNameSync() == 'PersonalRemote';
+
 /// Connect to a peer with [id].
 /// If [isFileTransfer], starts a session only for file transfer.
 /// If [isViewCamera], starts a session only for view camera.

@@ -52,6 +52,14 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
 
   var connectionMap = RxList<Widget>.empty(growable: true);
 
+  Widget _withPersonalSession(Widget Function(RemotePage) build) => Obx(() {
+        final state = tabController.state.value;
+        if (state.tabs.isEmpty || state.selected >= state.tabs.length) {
+          return const SizedBox.shrink();
+        }
+        return build(state.selectedTabInfo.page as RemotePage);
+      });
+
   _ConnectionTabPageState(Map<String, dynamic> params) {
     RemoteCountState.init();
     peerId = params['id'];
@@ -131,22 +139,67 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
 
   @override
   Widget build(BuildContext context) {
+    final personal = isPersonalRemoteWindows;
     final child = Scaffold(
       backgroundColor: Theme.of(context).colorScheme.background,
       body: DesktopTab(
         controller: tabController,
         onWindowCloseButton: handleWindowCloseButton,
-        tail: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _RelativeMouseModeHint(tabController: tabController),
-            const AddButton(),
-          ],
-        ),
-        selectedBorderColor: MyTheme.accent,
+        personalChrome: personal,
+        leading: personal
+            ? _withPersonalSession((page) =>
+                PersonalSessionName(id: page.id, session: page.topBarSession))
+            : null,
+        afterTabs: personal
+            ? Row(mainAxisSize: MainAxisSize.min, children: [
+                const AddButton(),
+                _withPersonalSession((page) => PersonalSessionLink(
+                    key: ValueKey(page.id),
+                    id: page.id,
+                    session: page.topBarSession,
+                    elapsed: page.connectionElapsed)),
+              ])
+            : null,
+        tail: personal
+            ? Row(mainAxisSize: MainAxisSize.min, children: [
+                _RelativeMouseModeHint(tabController: tabController),
+                _withPersonalSession((page) => PersonalSessionControls(
+                    key: ValueKey(page.id),
+                    id: page.id,
+                    session: page.topBarSession,
+                    extraTools: page.showExtraTools)),
+              ])
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _RelativeMouseModeHint(tabController: tabController),
+                  const AddButton(),
+                ],
+              ),
+        selectedBorderColor: personal ? null : MyTheme.accent,
         pageViewBuilder: (pageView) => pageView,
         labelGetter: DesktopTab.tablabelGetter,
         tabBuilder: (key, icon, label, themeConf) => Obx(() {
+          if (personal) {
+            final page = tabController.widget(key);
+            if (page is! RemotePage) return const SizedBox.shrink();
+            final monitor = PersonalMonitorLabel(
+                id: key,
+                session: page.topBarSession,
+                showDevice: tabController.state.value.tabs.length > 1);
+            return Listener(
+              onPointerDown: (event) {
+                if (event.kind != ui.PointerDeviceKind.mouse ||
+                    event.buttons != 2 ||
+                    page.topBarSession.value?.ffiModel.pi.isSet.value != true) {
+                  return;
+                }
+                showRightMenu((cancel) => _tabMenuBuilder(key, cancel),
+                    target: event.position);
+              },
+              child: monitor,
+            );
+          }
           final connectionType = ConnectionTypeState.find(key);
           if (!connectionType.isValid()) {
             return Row(

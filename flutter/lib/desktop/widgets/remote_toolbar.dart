@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hbb/common/widgets/audio_input.dart';
+import 'package:flutter_hbb/common/formatter/id_formatter.dart';
 import 'package:flutter_hbb/common/widgets/dialog.dart';
 import 'package:flutter_hbb/common/widgets/keyboard_shortcuts/display.dart';
 import 'package:flutter_hbb/common/widgets/toolbar.dart';
@@ -847,12 +848,14 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
       setFullscreen: _setFullscreen,
     ));
     if (personal && widget.ffi.connType == ConnType.defaultConn) {
-      toolbarItems.add(_PersonalSessionFileButton(id: widget.id, ffi: widget.ffi));
+      toolbarItems
+          .add(_PersonalSessionFileButton(id: widget.id, ffi: widget.ffi));
       toolbarItems.add(_PersonalPrivacyButton(id: widget.id, ffi: widget.ffi));
       toolbarItems.add(Obx(() {
         final fullscreen = stateGlobal.fullscreen.isTrue;
         return _IconMenuButton(
-          icon: Icon(fullscreen ? Icons.fullscreen_exit : Icons.fullscreen, size: 20),
+          icon: Icon(fullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
+              size: 20),
           tooltip: fullscreen ? 'Exit Fullscreen' : 'Fullscreen',
           color: _ToolbarTheme.blueColor,
           hoverColor: _ToolbarTheme.hoverBlueColor,
@@ -3026,6 +3029,363 @@ class _RecordMenu extends StatelessWidget {
   }
 }
 
+String _personalSessionName(String id, FFI? ffi) {
+  final alias = bind.mainGetPeerOptionSync(id: id, key: 'alias');
+  if (alias.isNotEmpty) return alias;
+  final hostname = ffi?.ffiModel.pi.hostname ?? '';
+  return hostname.isNotEmpty ? hostname : formatID(id);
+}
+
+class PersonalSessionName extends StatelessWidget {
+  const PersonalSessionName(
+      {super.key, required this.id, required this.session});
+  final String id;
+  final Rxn<FFI> session;
+
+  @override
+  Widget build(BuildContext context) => Obx(() {
+        final ffi = session.value;
+        Widget label() => ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 114),
+              child: Text(_personalSessionName(id, ffi),
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 13)),
+            );
+        return ffi == null
+            ? label()
+            : ListenableBuilder(
+                listenable: ffi.ffiModel.pi, builder: (_, __) => label());
+      });
+}
+
+class PersonalMonitorLabel extends StatelessWidget {
+  const PersonalMonitorLabel({
+    super.key,
+    required this.id,
+    required this.session,
+    required this.showDevice,
+  });
+  final String id;
+  final Rxn<FFI> session;
+  final bool showDevice;
+
+  @override
+  Widget build(BuildContext context) => Obx(() {
+        final ffi = session.value;
+        final index = CurrentDisplayState.find(id).value;
+        final pi = ffi?.ffiModel.pi;
+        final monitors = pi?.displays;
+        final size = monitors != null && index >= 0 && index < monitors.length
+            ? monitors[index]
+            : null;
+        final display =
+            index == kAllDisplayValue ? '所有显示屏' : '显示屏 ${index + 1}';
+        final details =
+            size == null ? display : '$display (${size.width}×${size.height})';
+        return Row(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.desktop_windows_outlined, size: 17),
+          const SizedBox(width: 8),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 210),
+            child: Text(
+                showDevice
+                    ? '${_personalSessionName(id, ffi)} · $details'
+                    : details,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 13)),
+          ),
+        ]);
+      });
+}
+
+class PersonalSessionLink extends StatelessWidget {
+  const PersonalSessionLink(
+      {super.key,
+      required this.id,
+      required this.session,
+      required this.elapsed});
+  final String id;
+  final Rxn<FFI> session;
+  final Stopwatch elapsed;
+
+  @override
+  Widget build(BuildContext context) => Obx(() {
+        final connection = ConnectionTypeState.find(id);
+        if (session.value == null || !connection.isValid()) {
+          return const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8),
+              child: Text('连接中', style: TextStyle(fontSize: 12)));
+        }
+        final direct = connection.direct.value == ConnectionType.strDirect;
+        final secure = connection.secure.value == ConnectionType.strSecure;
+        final description =
+            getConnectionText(secure, direct, connection.stream_type.value);
+        final fingerprint = FingerprintState.find(id).value;
+        final route = direct ? '直连' : '中继';
+        return Tooltip(
+          message: fingerprint.isEmpty
+              ? '$route · $description'
+              : '$route · $description\n${translate('Fingerprint')}: $fingerprint',
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.signal_cellular_alt_rounded,
+                  size: 18,
+                  color: secure
+                      ? const Color(0xff00a77c)
+                      : const Color(0xffaa6100)),
+              const SizedBox(width: 6),
+              _SessionElapsed(elapsed),
+            ]),
+          ),
+        );
+      });
+}
+
+class _SessionElapsed extends StatefulWidget {
+  const _SessionElapsed(this.elapsed);
+  final Stopwatch elapsed;
+
+  @override
+  State<_SessionElapsed> createState() => _SessionElapsedState();
+}
+
+class _SessionElapsedState extends State<_SessionElapsed> {
+  late final Timer _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker =
+        Timer.periodic(const Duration(seconds: 1), (_) => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _ticker.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final seconds = widget.elapsed.elapsed.inSeconds;
+    final parts = [seconds ~/ 3600, seconds ~/ 60 % 60, seconds % 60];
+    return Text(parts.map((part) => part.toString().padLeft(2, '0')).join(':'),
+        style: const TextStyle(
+            fontSize: 12, fontFeatures: [FontFeature.tabularFigures()]));
+  }
+}
+
+class PersonalSessionControls extends StatefulWidget {
+  const PersonalSessionControls({
+    super.key,
+    required this.id,
+    required this.session,
+    required this.extraTools,
+  });
+  final String id;
+  final Rxn<FFI> session;
+  final RxBool extraTools;
+
+  @override
+  State<PersonalSessionControls> createState() =>
+      _PersonalSessionControlsState();
+}
+
+class _PersonalSessionControlsState extends State<PersonalSessionControls> {
+  final _center = MenuController();
+  Future<List<TRadioMenu<String>>>? _quality;
+  bool? _muted;
+
+  @override
+  Widget build(BuildContext context) => Obx(() {
+        final ffi = widget.session.value;
+        if (ffi == null || !ffi.ffiModel.pi.isSet.value) {
+          return const SizedBox.shrink();
+        }
+        return ListenableBuilder(
+          listenable: ffi.ffiModel,
+          builder: (context, _) => _controls(context, ffi),
+        );
+      });
+
+  Widget _controls(BuildContext context, FFI ffi) {
+    final id = widget.id;
+    final model = ffi.ffiModel;
+    final pi = model.pi;
+    final sid = ffi.sessionId;
+    final privacy = PrivacyModeState.find(id);
+    const audioOption = 'disable-audio';
+    final audioAllowed = model.permissions['audio'] != false;
+    final muted = audioAllowed &&
+        (_muted ??
+            bind.sessionGetToggleOptionSync(sessionId: sid, arg: audioOption));
+    final toggles = privacy.isNotEmpty ||
+            (pi.features.privacyMode &&
+                model.keyboard &&
+                model.permissions['privacy_mode'] != false)
+        ? toolbarPrivacyMode(privacy, context, id, ffi)
+        : <TToggleMenu>[];
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      IconButton(
+        tooltip: muted ? '恢复会话声音' : '静音',
+        onPressed: audioAllowed
+            ? () async {
+                await bind.sessionToggleOption(
+                    sessionId: sid, value: audioOption);
+                if (!mounted) return;
+                setState(() => _muted = bind.sessionGetToggleOptionSync(
+                    sessionId: sid, arg: audioOption));
+              }
+            : null,
+        icon: Icon(muted ? Icons.volume_off_outlined : Icons.volume_up_outlined,
+            size: 18),
+      ),
+      MenuAnchor(
+        controller: _center,
+        menuChildren: [
+          _monitorMenu(ffi),
+          FutureBuilder<List<TRadioMenu<String>>>(
+            future: _quality,
+            builder: (context, snapshot) {
+              final options = snapshot.data ?? const <TRadioMenu<String>>[];
+              return SubmenuButton(
+                leadingIcon: const Icon(Icons.tune, size: 17),
+                menuChildren: options.isEmpty
+                    ? [
+                        const MenuItemButton(
+                            onPressed: null, child: Text('正在读取画质'))
+                      ]
+                    : options
+                        .map((option) => MenuItemButton(
+                              leadingIcon: Icon(
+                                  option.value == option.groupValue
+                                      ? Icons.radio_button_checked
+                                      : Icons.radio_button_unchecked,
+                                  size: 16),
+                              onPressed: option.onChanged == null
+                                  ? null
+                                  : () => option.onChanged!(option.value),
+                              child: Text(switch (option.value) {
+                                kRemoteImageQualityLow => '流畅',
+                                kRemoteImageQualityBalanced => '均衡',
+                                kRemoteImageQualityBest => '清晰',
+                                _ => '高级自定义',
+                              }),
+                            ))
+                        .toList(),
+                child: const Text('画质'),
+              );
+            },
+          ),
+          MenuItemButton(
+            leadingIcon: const Icon(Icons.folder_open_outlined, size: 17),
+            onPressed: model.permissions['file'] != false
+                ? () => connect(context, id, isFileTransfer: true)
+                : null,
+            child: const Text('文件传输'),
+          ),
+          MenuItemButton(
+            leadingIcon: const Icon(Icons.monitor_heart_outlined, size: 17),
+            onPressed: () async {
+              await bind.sessionToggleOption(
+                  sessionId: sid, value: 'show-quality-monitor');
+              ffi.qualityMonitorModel.checkShowQualityMonitor(sid);
+            },
+            child: const Text('连接统计'),
+          ),
+          if (toggles.isNotEmpty)
+            SubmenuButton(
+              leadingIcon: const Icon(Icons.shield_outlined, size: 17),
+              menuChildren: toggles
+                  .map((item) => MenuItemButton(
+                      leadingIcon: Icon(
+                          item.value
+                              ? Icons.check_box_outlined
+                              : Icons.check_box_outline_blank,
+                          size: 17),
+                      onPressed: item.onChanged == null
+                          ? null
+                          : () => item.onChanged!(!item.value),
+                      child: item.child))
+                  .toList(),
+              child: const Text('隐私模式'),
+            ),
+          MenuItemButton(
+            leadingIcon: const Icon(Icons.fullscreen, size: 18),
+            onPressed: () => stateGlobal.setFullscreen(true),
+            child: const Text('全屏'),
+          ),
+          MenuItemButton(
+            leadingIcon: const Icon(Icons.more_horiz, size: 18),
+            onPressed: () => widget.extraTools.toggle(),
+            child: Text(widget.extraTools.isTrue ? '收起更多工具' : '更多工具'),
+          ),
+          const Divider(height: 1),
+          MenuItemButton(
+            leadingIcon: const Icon(Icons.link_off, size: 17),
+            onPressed: () => closeConnection(id: id),
+            child: const Text('断开连接'),
+          ),
+        ],
+        builder: (context, controller, child) => TextButton.icon(
+          onPressed: () {
+            if (controller.isOpen) {
+              controller.close();
+            } else {
+              setState(() {
+                _muted = null;
+                _quality = toolbarImageQuality(context, id, ffi);
+              });
+              controller.open();
+            }
+          },
+          icon: const Icon(Icons.tune_rounded, size: 18),
+          label: const Text('控制中心'),
+          style: TextButton.styleFrom(
+            foregroundColor: Theme.of(context).colorScheme.onSurface,
+            padding: const EdgeInsets.symmetric(horizontal: 9),
+          ),
+        ),
+      ),
+    ]);
+  }
+
+  Widget _monitorMenu(FFI ffi) => Obx(() {
+        final pi = ffi.ffiModel.pi;
+        final privacy = PrivacyModeState.find(widget.id);
+        final current = CurrentDisplayState.find(widget.id).value;
+        final allowed = privacy.isEmpty ||
+            allowDisplaySwitchInPrivacyMode(pi, privacy.value);
+        final monitors = [
+          for (var i = 0; i < pi.displays.length; i++) i,
+          if (pi.isSupportMultiDisplay && pi.displays.length > 1)
+            kAllDisplayValue,
+        ];
+        final native = _MonitorMenu(
+            id: widget.id,
+            ffi: ffi,
+            edge: _ToolbarEdge.top,
+            setRemoteState: setState);
+        return SubmenuButton(
+          leadingIcon: const Icon(Icons.desktop_windows_outlined, size: 17),
+          menuChildren: [
+            for (final i in monitors)
+              MenuItemButton(
+                leadingIcon: Icon(
+                    i == current ? Icons.check : Icons.monitor_outlined,
+                    size: 16),
+                onPressed: !allowed || i == current
+                    ? null
+                    : () => native.onPressed(i, pi, true),
+                child: Text(i == kAllDisplayValue ? '所有显示屏' : '显示屏 ${i + 1}'),
+              ),
+          ],
+          child: const Text('显示屏'),
+        );
+      });
+}
+
 class _PersonalSessionStatus extends StatelessWidget {
   const _PersonalSessionStatus({required this.id, required this.ffi});
 
@@ -3079,13 +3439,17 @@ class _PersonalSessionFileButton extends StatelessWidget {
       return ListenableBuilder(
         listenable: ffi.ffiModel,
         builder: (context, _) {
-          final allowed = connected && ffi.ffiModel.permissions['file'] != false;
+          final allowed =
+              connected && ffi.ffiModel.permissions['file'] != false;
           return _IconMenuButton(
             icon: const Icon(Icons.folder_open_outlined, size: 18),
-            tooltip: allowed ? 'Transfer file' : 'File transfer is not available',
+            tooltip:
+                allowed ? 'Transfer file' : 'File transfer is not available',
             color: _ToolbarTheme.blueColor,
             hoverColor: _ToolbarTheme.hoverBlueColor,
-            onPressed: allowed ? () => connect(context, id, isFileTransfer: true) : null,
+            onPressed: allowed
+                ? () => connect(context, id, isFileTransfer: true)
+                : null,
           );
         },
       );
@@ -3107,7 +3471,8 @@ class _PersonalPrivacyButton extends StatelessWidget {
         final state = PrivacyModeState.find(id);
         final available = ffi.ffiModel.pi.features.privacyMode;
         if (!state.isNotEmpty &&
-            (!available || !ffi.ffiModel.keyboard ||
+            (!available ||
+                !ffi.ffiModel.keyboard ||
                 ffi.ffiModel.permissions['privacy_mode'] == false)) {
           return const SizedBox.shrink();
         }

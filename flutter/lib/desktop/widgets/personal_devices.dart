@@ -12,7 +12,9 @@ import 'package:flutter_hbb/models/platform_model.dart';
 const _groupsOption = 'personal-remote-device-groups';
 
 class PersonalDevices extends StatefulWidget {
-  const PersonalDevices({super.key});
+  const PersonalDevices({super.key, this.startOnRecent = false});
+
+  final bool startOnRecent;
 
   @override
   State<PersonalDevices> createState() => _PersonalDevicesState();
@@ -21,7 +23,7 @@ class PersonalDevices extends StatefulWidget {
 class _PersonalDevicesState extends State<PersonalDevices> {
   final _groups = <String>{};
   final _devices = <String, String>{};
-  var _tab = PeerTabIndex.fav;
+  late var _tab = widget.startOnRecent ? PeerTabIndex.recent : PeerTabIndex.fav;
   String? _group;
   bool _saving = false;
 
@@ -219,7 +221,11 @@ class _PersonalDevicesState extends State<PersonalDevices> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('我的设备', style: Theme.of(context).textTheme.headlineSmall),
+          Text(widget.startOnRecent ? '全部设备' : '收藏设备',
+              style: Theme.of(context)
+                  .textTheme
+                  .headlineMedium
+                  ?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 14),
           TextField(
             controller: peerSearchTextController,
