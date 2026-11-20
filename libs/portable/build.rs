@@ -6,7 +6,7 @@ fn main() {
         res.set_icon("../../res/icon.ico")
             .set("ProductName", "PersonalRemote")
             .set("FileDescription", "PersonalRemote Setup")
-            .set("ProductVersion", "0.1.5")
+            .set("ProductVersion", "0.1.6")
             .set_language(winapi::um::winnt::MAKELANGID(
                 winapi::um::winnt::LANG_ENGLISH,
                 winapi::um::winnt::SUBLANG_ENGLISH_US,

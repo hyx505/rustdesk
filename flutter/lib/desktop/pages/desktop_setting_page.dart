@@ -14,6 +14,8 @@ import 'package:flutter_hbb/common/widgets/keyboard_shortcuts/page_body.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_keyboard_shortcuts_page.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_tab_page.dart';
 import 'package:flutter_hbb/desktop/widgets/personal_startup.dart';
+import 'package:flutter_hbb/desktop/widgets/personal_update_dialog.dart';
+import 'package:flutter_hbb/desktop/widgets/personal_update_feed.dart';
 import 'package:flutter_hbb/desktop/widgets/remote_toolbar.dart';
 import 'package:flutter_hbb/mobile/widgets/dialog.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
@@ -474,12 +476,15 @@ class _GeneralState extends State<_General> {
           ]),
           theme(),
           _Card(title: 'Language', children: [language()]),
-          const _PersonalSettingsCard(children: [
+          _PersonalSettingsCard(children: [
             _PersonalSettingsRow(
               title: '版本更新',
-              description: '下载新版安装包后，可覆盖升级。',
+              description: '当前版本 $personalRemoteVersion',
               icon: Icons.system_update_alt_outlined,
-              child: Text('手动更新'),
+              child: OutlinedButton(
+                onPressed: () => showPersonalUpdateDialog(context),
+                child: const Text('检查更新'),
+              ),
             ),
           ]),
           _PersonalSettingsCard(children: [
@@ -2788,7 +2793,7 @@ class _AboutState extends State<_About> {
                 height: 8.0,
               ),
               SelectionArea(
-                  child: Text(personal ? '0.1.5 · 基于 RustDesk $version' : '${translate('Version')}: $version')
+                  child: Text(personal ? '$personalRemoteVersion · 基于 RustDesk $version' : '${translate('Version')}: $version')
                       .marginSymmetric(vertical: 4.0)),
               SelectionArea(
                   child: Text('${translate('Build Date')}: $buildDate')

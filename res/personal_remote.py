@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PROFILE = ROOT / ".personal-remote.json"
 OUTPUT = ROOT / "dist" / "personal-remote"
 BUILD_ARGS = ["--portable", "--flutter", "--skip-portable-pack", "--hwcodec", "--vram"]
-VERSION = "0.1.5"
+VERSION = "0.1.6"
 PROFILE_NAME = "PersonalRemote.server.json"
 TEMPLATE_DIR = OUTPUT / "template"
 TEMPLATE_NAME = "PersonalRemote-template.exe"
@@ -137,6 +137,29 @@ def attach_package(template, blob):
         raise ctypes.WinError(ctypes.get_last_error())
 
 
+def write_release_metadata(installer, profile):
+    with installer.open("rb") as stream:
+        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+    installer.with_suffix(".exe.sha256").write_text(
+        f"{digest}  {installer.name}\n", encoding="ascii"
+    )
+    manifest = {
+        "schema": 1,
+        "version": VERSION,
+        "file": installer.name,
+        "size": installer.stat().st_size,
+        "sha256": digest,
+        "profile_sha256": hashlib.sha256("\0".join(profile).encode("utf-8")).hexdigest(),
+    }
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=installer.parent, delete=False
+    ) as output:
+        staged = Path(output.name)
+        json.dump(manifest, output, indent=2)
+        output.write("\n")
+    staged.replace(installer.with_name("update.json"))
+
+
 def package(artifact=None):
     with PROFILE.open(encoding="utf-8") as stream:
         server, relay, key = validate_profile(json.load(stream))
@@ -173,9 +196,7 @@ def package(artifact=None):
         staged.write_bytes(files[TEMPLATE_NAME])
         attach_package(staged, package_blob.read_bytes())
         staged.replace(package)
-    with package.open("rb") as stream:
-        digest = hashlib.file_digest(stream, "sha256").hexdigest()
-    package.with_suffix(".exe.sha256").write_text(f"{digest}  {package.name}\n", encoding="ascii")
+    write_release_metadata(package, (server, relay, key))
     print(package)
 
 

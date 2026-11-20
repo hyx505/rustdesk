@@ -1,4 +1,4 @@
-# 自用远控 0.1.0
+# 自用远控
 
 适用 Windows 10/11 x64。两台电脑使用同一个安装包，可以互为主控和被控。项目基于 RustDesk 1.5.3，随源码保留 AGPLv3 许可。
 
@@ -15,6 +15,14 @@
 
    如果用其他 Python 环境安装依赖，请用同一个环境执行打包。需要手动配置时，在项目根目录创建 `.personal-remote.json`，填写 `id_server`、`server_key` 和 `relay_server`。中继自动选择时令 `relay_server` 为空字符串。服务器密钥只填 `id_ed25519.pub` 的公钥。
 3. 在 `dist/personal-remote/` 获取安装 EXE 和 SHA-256 文件。双击 EXE 打开安装界面。升级时运行新版安装包，保留上一版安装包用于手动回退。
+
+## 在客户端检查更新
+
+从 0.1.6 开始，在「设置 → 常规 → 检查更新」可选择本地目录、Windows 共享目录或填写 HTTPS 地址。首次从 0.1.5 升级时，双击 0.1.6 安装包覆盖安装。
+
+后续每次发布个人版时，在`res/personal_remote.py`、`libs/portable/build.rs` 和 `flutter/lib/desktop/widgets/personal_update_feed.dart` 中同步个人版本号，再正常构建和打包。打包会生成安装 EXE、SHA-256 文件和 `update.json`。将新 EXE 放入更新目录，再更新目录里的 `update.json`。如果直接使用本机的 `dist/personal-remote/`，打包脚本会按此顺序写入。
+
+在客户端填写该目录，或指向其 `update.json` 的 HTTPS 链接。客户端检查个人版版本和服务器配置，核对下载文件的大小与 SHA-256，再由使用者打开安装器。安装包含个人服务器配置，请将更新源放在只有你信任的发布者可写、接收者可读的位置。
 
 ## 从源码构建
 
