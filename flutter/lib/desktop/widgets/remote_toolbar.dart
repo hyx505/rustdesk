@@ -1567,7 +1567,7 @@ class ScreenAdjustor {
             : 0.0;
         final windowEdge = kWindowBorderWidth + resizePadding;
         horizontalEdges = windowEdge * 2;
-        verticalEdges = kDesktopRemoteTabBarHeight + windowEdge * 2;
+        verticalEdges = stateGlobal.windowedTabBarHeight + windowEdge * 2;
       } else {
         horizontalEdges = CanvasModel.leftToEdge + CanvasModel.rightToEdge;
         verticalEdges = CanvasModel.topToEdge + CanvasModel.bottomToEdge;
@@ -1856,7 +1856,9 @@ class _DisplayMenuState extends State<_DisplayMenu> {
             ...v.map((e) {
               final isCustom = e.value == kRemoteViewStyleCustom;
               final child =
-                  isCustom ? Text(translate('Scale custom')) : e.child;
+                  isPersonalRemoteWindows && e.value == kRemoteViewStyleAdaptive
+                      ? const Text('适应窗口')
+                      : e.child;
               // Whether the current selection is already custom
               final bool isGroupCustomSelected =
                   e.groupValue == kRemoteViewStyleCustom;
@@ -3195,6 +3197,7 @@ class PersonalSessionControls extends StatefulWidget {
 class _PersonalSessionControlsState extends State<PersonalSessionControls> {
   final _center = MenuController();
   Future<List<TRadioMenu<String>>>? _quality;
+  Future<List<TRadioMenu<String>>>? _viewStyles;
   bool? _muted;
 
   @override
@@ -3245,6 +3248,7 @@ class _PersonalSessionControlsState extends State<PersonalSessionControls> {
         controller: _center,
         menuChildren: [
           _monitorMenu(ffi),
+          _viewScaleMenu(),
           FutureBuilder<List<TRadioMenu<String>>>(
             future: _quality,
             builder: (context, snapshot) {
@@ -3336,6 +3340,7 @@ class _PersonalSessionControlsState extends State<PersonalSessionControls> {
               setState(() {
                 _muted = null;
                 _quality = toolbarImageQuality(context, id, ffi);
+                _viewStyles = toolbarViewStyle(context, id, ffi);
               });
               controller.open();
             }
@@ -3349,6 +3354,45 @@ class _PersonalSessionControlsState extends State<PersonalSessionControls> {
         ),
       ),
     ]);
+  }
+
+  Widget _viewScaleMenu() {
+    const labels = {
+      kRemoteViewStyleAdaptive: '适应窗口',
+      kRemoteViewStyleOriginal: '原始大小',
+    };
+    return FutureBuilder<List<TRadioMenu<String>>>(
+      future: _viewStyles,
+      builder: (context, snapshot) {
+        final options =
+            snapshot.data?.where((option) => labels.containsKey(option.value));
+        return SubmenuButton(
+          leadingIcon: const Icon(Icons.fit_screen_outlined, size: 17),
+          menuChildren: [
+            if (options == null)
+              MenuItemButton(
+                onPressed: null,
+                child: Text(snapshot.hasError ? '读取缩放失败' : '正在读取缩放'),
+              )
+            else
+              for (final option in options)
+                MenuItemButton(
+                  leadingIcon: Icon(
+                    option.value == option.groupValue
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                    size: 16,
+                  ),
+                  onPressed: option.onChanged == null
+                      ? null
+                      : () => option.onChanged!(option.value),
+                  child: Text(labels[option.value]!),
+                ),
+          ],
+          child: const Text('画面缩放'),
+        );
+      },
+    );
   }
 
   Widget _monitorMenu(FFI ffi) => Obx(() {

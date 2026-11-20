@@ -532,8 +532,9 @@ class _DesktopTabState extends State<DesktopTab>
             !(kUseCompatibleUiMode && isHideSingleItem())) {
           final showBottomDivider = _showTabBarBottomDivider(tabType);
           final main = tabType == DesktopTabType.main;
-          final height =
-              widget.personalChrome ? (main ? 60.0 : 50.0) : _kTabBarHeight;
+          final height = widget.personalChrome
+              ? (main ? 60.0 : kPersonalRemoteSessionTabBarHeight)
+              : _kTabBarHeight;
           final dark = Theme.of(context).brightness == Brightness.dark;
           return Container(
             height: height,

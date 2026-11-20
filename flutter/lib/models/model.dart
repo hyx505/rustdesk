@@ -2435,6 +2435,11 @@ class CanvasModel with ChangeNotifier {
       }
     }
     _resetCanvasOffset(displayWidth, displayHeight);
+    if (style == kRemoteViewStyleAdaptive) {
+      // Floating-point rounding can leave a fitted edge just outside the viewport.
+      _x = max(0.0, _x);
+      _y = max(0.0, _y);
+    }
     final overflow = _x < 0 || y < 0;
     if (_imageOverflow.value != overflow) {
       _imageOverflow.value = overflow;

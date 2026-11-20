@@ -40,7 +40,11 @@ class StateGlobal {
   int get windowId => _windowId;
   RxBool get fullscreen => _fullscreen;
   bool get isMinimized => _isMinimized;
-  double get tabBarHeight => fullscreen.isTrue ? 0 : kDesktopRemoteTabBarHeight;
+  double get windowedTabBarHeight =>
+      desktopType == DesktopType.remote && isPersonalRemoteWindows
+          ? kPersonalRemoteSessionTabBarHeight
+          : kDesktopRemoteTabBarHeight;
+  double get tabBarHeight => fullscreen.isTrue ? 0 : windowedTabBarHeight;
   RxBool get showTabBar => _showTabBar;
   RxDouble get resizeEdgeSize => _resizeEdgeSize;
   RxDouble get windowBorderWidth => _windowBorderWidth;
