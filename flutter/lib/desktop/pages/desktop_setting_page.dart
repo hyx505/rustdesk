@@ -28,6 +28,8 @@ import 'package:url_launcher/url_launcher_string.dart';
 import '../../common/widgets/dialog.dart';
 import '../../common/widgets/login.dart';
 
+part 'personal_settings_page.dart';
+
 const double _kTabWidth = 200;
 const double _kTabHeight = 42;
 const double _kCardFixedWidth = 540;
@@ -63,6 +65,7 @@ enum SettingsTabKey {
 
 class DesktopSettingPage extends StatefulWidget {
   final SettingsTabKey initialTabkey;
+  final bool embedded;
   static final List<SettingsTabKey> tabKeys = [
     if (bind.mainGetBuildinOption(key: kOptionHideGeneralSetting) != 'Y')
       SettingsTabKey.general,
@@ -84,16 +87,23 @@ class DesktopSettingPage extends StatefulWidget {
     SettingsTabKey.about,
   ];
 
-  DesktopSettingPage({Key? key, required this.initialTabkey}) : super(key: key);
+  DesktopSettingPage({
+    Key? key,
+    required this.initialTabkey,
+    this.embedded = false,
+  }) : super(key: key);
 
   @override
-  State<DesktopSettingPage> createState() =>
-      _DesktopSettingPageState(initialTabkey);
+  State<DesktopSettingPage> createState() => _DesktopSettingPageState();
 
   static void switch2page(SettingsTabKey page) {
     try {
       int index = tabKeys.indexOf(page);
       if (index == -1) {
+        return;
+      }
+      if (DesktopTabPage.usesPersonalHome) {
+        DesktopTabPage.onAddSetting(initialPage: page);
         return;
       }
       if (Get.isRegistered<PageController>(tag: _kSettingPageControllerTag) &&
@@ -129,8 +139,8 @@ class _DesktopSettingPageState extends State<DesktopSettingPage>
   final RxBool _canBeBlocked = false.obs;
   Timer? _videoConnTimer;
 
-  _DesktopSettingPageState(SettingsTabKey initialTabkey) {
-    var initialIndex = DesktopSettingPage.tabKeys.indexOf(initialTabkey);
+  void _initLegacyTabs() {
+    var initialIndex = DesktopSettingPage.tabKeys.indexOf(widget.initialTabkey);
     if (initialIndex == -1) {
       initialIndex = 0;
     }
@@ -159,6 +169,7 @@ class _DesktopSettingPageState extends State<DesktopSettingPage>
   @override
   void initState() {
     super.initState();
+    if (!widget.embedded) _initLegacyTabs();
     WidgetsBinding.instance.addObserver(this);
     _videoConnTimer =
         periodic_immediate(Duration(milliseconds: 1000), () async {
@@ -177,10 +188,11 @@ class _DesktopSettingPageState extends State<DesktopSettingPage>
   void dispose() {
     _videoConnTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
-    Get.delete<PageController>(tag: _kSettingPageControllerTag);
-    Get.delete<Rx<SettingsTabKey>>(tag: _kSettingPageTabKeyTag);
-    // Get.delete does not dispose a plain ChangeNotifier.
-    controller.dispose();
+    if (!widget.embedded) {
+      Get.delete<PageController>(tag: _kSettingPageControllerTag);
+      Get.delete<Rx<SettingsTabKey>>(tag: _kSettingPageTabKeyTag);
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -277,6 +289,11 @@ class _DesktopSettingPageState extends State<DesktopSettingPage>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    if (widget.embedded) {
+      return _buildBlock(children: [
+        Expanded(child: _PersonalSettings(initial: widget.initialTabkey)),
+      ]);
+    }
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.background,
       body: _buildBlock(
@@ -412,6 +429,47 @@ class _GeneralState extends State<_General> {
 
   @override
   Widget build(BuildContext context) {
+    if (_PersonalSettingsScope.enabled(context)) {
+      return ListView(
+        padding: const EdgeInsets.only(bottom: 24, right: 1),
+        children: [
+          service(),
+          _PersonalSettingsCard(children: [
+            _OptionCheckBox(
+              context,
+              'keep-awake-during-outgoing-sessions-label',
+              kOptionKeepAwakeDuringOutgoingSessions,
+              isServer: false,
+              personalIcon: Icons.monitor_heart_outlined,
+              personalDescription: '远控其他设备时，让本机屏幕保持唤醒。',
+            ),
+          ]),
+          theme(),
+          _Card(title: 'Language', children: [language()]),
+          const _PersonalSettingsCard(children: [
+            _PersonalSettingsRow(
+              title: '版本更新',
+              description: '下载新版安装包后，可覆盖升级。',
+              icon: Icons.system_update_alt_outlined,
+              child: Text('手动更新'),
+            ),
+          ]),
+          _PersonalSettingsCard(children: [
+            _PersonalSettingsRow(
+              title: '高级选项',
+              icon: Icons.tune_rounded,
+              child: const SizedBox.shrink(),
+            ),
+            _PersonalSettingsAdvanced(children: [
+              hwcodec(),
+              audio(context),
+              record(context),
+              other(),
+            ]),
+          ]),
+        ],
+      );
+    }
     final scrollController = ScrollController();
     return ListView(
       controller: scrollController,
@@ -475,6 +533,19 @@ class _GeneralState extends State<_General> {
     }
 
     final isOptFixed = isOptionFixed(kCommConfKeyTheme);
+    if (_PersonalSettingsScope.enabled(context)) {
+      return _PersonalSettingsCard(children: [
+        _PersonalSettingsRow(
+          icon: Icons.palette_outlined,
+          title: '外观',
+          child: _PersonalSettingsSelect(
+            current: current,
+            entries: const {'light': '浅色', 'dark': '深色', 'system': '跟随系统'},
+            onChanged: isOptFixed ? null : onChanged,
+          ),
+        ),
+      ]);
+    }
     return _Card(title: 'Theme', children: [
       _Radio<String>(context,
           value: 'light',
@@ -507,17 +578,30 @@ class _GeneralState extends State<_General> {
         return const Offstage();
       }
 
+      Future<void> toggle() async {
+        serviceBtnEnabled.value = false;
+        await start_service(serviceStop.value);
+        Future.delayed(const Duration(seconds: 1), () {
+          serviceBtnEnabled.value = true;
+        });
+      }
+
+      if (_PersonalSettingsScope.enabled(context)) {
+        return _PersonalSettingsCard(children: [
+          _PersonalSettingsRow(
+            icon: Icons.devices_outlined,
+            title: '远控服务',
+            description: '服务运行时，本机可以接受远程连接。',
+            child: _PersonalSettingsSwitch(
+              value: !serviceStop.value,
+              onChanged: serviceBtnEnabled.value ? (_) => toggle() : null,
+            ),
+          ),
+        ]);
+      }
       return _Card(title: 'Service', children: [
-        _Button(serviceStop.value ? 'Start' : 'Stop', () {
-          () async {
-            serviceBtnEnabled.value = false;
-            await start_service(serviceStop.value);
-            // enable the button after 1 second
-            Future.delayed(const Duration(seconds: 1), () {
-              serviceBtnEnabled.value = true;
-            });
-          }();
-        }, enabled: serviceBtnEnabled.value)
+        _Button(serviceStop.value ? 'Start' : 'Stop', toggle,
+            enabled: serviceBtnEnabled.value),
       ]);
     });
   }
@@ -648,7 +732,7 @@ class _GeneralState extends State<_General> {
     ];
 
     // Add client-side wakelock option for desktop platforms
-    if (!bind.isIncomingOnly()) {
+    if (!bind.isIncomingOnly() && !_PersonalSettingsScope.enabled(context)) {
       children.add(_OptionCheckBox(
         context,
         'keep-awake-during-outgoing-sessions-label',
@@ -1027,6 +1111,7 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    final personal = _PersonalSettingsScope.enabled(context);
     return SingleChildScrollView(
         controller: scrollController,
         child: Column(
@@ -1038,8 +1123,9 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
             preventMouseKeyBuilder(
               block: locked,
               child: Column(children: [
+                if (personal) password(context),
                 permissions(context),
-                password(context),
+                if (!personal) password(context),
                 _Card(title: '2FA', children: [tfa()]),
                 if (!isChangeIdDisabled())
                   _Card(title: 'ID', children: [changeId()]),
@@ -1296,6 +1382,7 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
   }
 
   Widget password(BuildContext context) {
+    final personal = _PersonalSettingsScope.enabled(context);
     return ChangeNotifierProvider.value(
         value: gFFI.serverModel,
         child: Consumer<ServerModel>(builder: ((context, model, child) {
@@ -1311,8 +1398,25 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
           ];
           bool tmpEnabled = model.verificationMethod != kUsePermanentPassword;
           bool permEnabled = model.verificationMethod != kUseTemporaryPassword;
-          String currentValue =
-              passwordValues[passwordKeys.indexOf(model.verificationMethod)];
+          final currentIndex = passwordKeys.indexOf(model.verificationMethod);
+          final currentValue =
+              passwordValues[currentIndex < 0 ? 0 : currentIndex];
+          Future<void> setMethod(String key) async {
+            Future<void> apply() async {
+              await model.setVerificationMethod(key);
+              await model.updatePasswordModel();
+            }
+
+            if (key == kUsePermanentPassword &&
+                (await bind.mainGetCommon(key: 'permanent-password-set')) !=
+                    'true' &&
+                !isChangePermanentPasswordDisabled()) {
+              setPasswordDialog(notEmptyCallback: apply);
+              return;
+            }
+            await apply();
+          }
+
           List<Widget> radios = passwordValues
               .map((value) => _Radio<String>(
                     context,
@@ -1321,28 +1425,8 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
                     label: value,
                     onChanged: locked
                         ? null
-                        : ((value) async {
-                            callback() async {
-                              await model.setVerificationMethod(
-                                  passwordKeys[passwordValues.indexOf(value)]);
-                              await model.updatePasswordModel();
-                            }
-
-                            if (value ==
-                                    passwordValues[passwordKeys
-                                        .indexOf(kUsePermanentPassword)] &&
-                                (await bind.mainGetCommon(
-                                        key: "permanent-password-set")) !=
-                                    "true") {
-                              if (isChangePermanentPasswordDisabled()) {
-                                await callback();
-                                return;
-                              }
-                              setPasswordDialog(notEmptyCallback: callback);
-                            } else {
-                              await callback();
-                            }
-                          }),
+                        : (value) => setMethod(
+                            passwordKeys[passwordValues.indexOf(value)]),
                   ))
               .toList();
 
@@ -1421,6 +1505,52 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
           final usePassword = model.approveMode != 'click';
 
           final isApproveModeFixed = isOptionFixed(kOptionApproveMode);
+          if (personal) {
+            return _PersonalSettingsCard(children: [
+              _PersonalSettingsRow(
+                title: '远程协助连接本设备的方式',
+                description: '通过设备 ID 发起协助，按所选方式确认身份。',
+                icon: Icons.verified_user_outlined,
+                child: _PersonalSettingsSelect(
+                  current: modeInitialKey,
+                  entries: {
+                    'password': '验证码连接',
+                    'click': '手动确认',
+                    defaultOptionApproveMode: '验证码或手动确认',
+                  },
+                  onChanged: locked || isApproveModeFixed
+                      ? null
+                      : model.setApproveMode,
+                ),
+              ),
+              if (usePassword) ...[
+                const Divider(height: 1),
+                _PersonalSettingsRow(
+                  title: '验证码连接',
+                  icon: Icons.password_rounded,
+                  child: _PersonalSettingsSelect(
+                    current: model.verificationMethod,
+                    entries: const {
+                      kUseTemporaryPassword: '临时验证码',
+                      kUsePermanentPassword: '固定密码',
+                      kUseBothPasswords: '临时验证码或固定密码',
+                    },
+                    onChanged: locked ? null : setMethod,
+                  ),
+                ),
+                _PersonalSettingsAdvanced(children: [
+                  if (tmpEnabled)
+                    _SubLabeledWidget(context, 'One-time password length',
+                        Wrap(children: lengthRadios),
+                        enabled: !locked),
+                  if (tmpEnabled) numericOneTimePassword,
+                  if (permEnabled && !isChangePermanentPasswordDisabled())
+                    _SubButton(
+                        'Set permanent password', setPasswordDialog, !locked),
+                ]),
+              ],
+            ]);
+          }
           return _Card(title: 'Password', children: [
             ComboBox(
               enabled: !locked && !isApproveModeFixed,
@@ -1831,6 +1961,7 @@ class _NetworkState extends State<_Network> with AutomaticKeepAliveClientMixin {
   }
 
   Widget network(BuildContext context) {
+    final personal = _PersonalSettingsScope.enabled(context);
     final hideServer =
         bind.mainGetBuildinOption(key: kOptionHideServerSetting) == 'Y';
     final hideProxy =
@@ -1851,6 +1982,18 @@ class _NetworkState extends State<_Network> with AutomaticKeepAliveClientMixin {
       bool showTooltip = false,
       String tooltipMessage = '',
     }) {
+      if (personal) {
+        return _PersonalSettingsRow(
+          icon: icon,
+          title: translate(title),
+          description: showTooltip ? tooltipMessage : null,
+          child: trailing ??
+              OutlinedButton(
+                onPressed: locked ? null : onTap,
+                child: const Text('设置'),
+              ),
+        );
+      }
       final titleWidget = showTooltip
           ? Row(
               children: [
@@ -1905,7 +2048,8 @@ class _NetworkState extends State<_Network> with AutomaticKeepAliveClientMixin {
           title: title,
           showTooltip: true,
           tooltipMessage: tooltipMessage,
-          trailing: Switch(
+          trailing: _networkSwitch(
+            personal,
             value: mainGetBoolOptionSync(optionKey),
             onChanged: locked || isOptionFixed(optionKey)
                 ? null
@@ -1919,83 +2063,94 @@ class _NetworkState extends State<_Network> with AutomaticKeepAliveClientMixin {
     final outgoingOnly = bind.isOutgoingOnly();
 
     final divider = const Divider(height: 1, indent: 16, endIndent: 16);
-    return _Card(
-      title: 'Network',
+    final controls = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (!hideServer)
-                listTile(
-                  icon: Icons.dns_outlined,
-                  title: 'ID/Relay Server',
-                  onTap: () => showServerSettings(gFFI.dialogManager, setState),
-                ),
-              if (!hideProxy && !hideServer) divider,
-              if (!hideProxy)
-                listTile(
-                  icon: Icons.network_ping_outlined,
-                  title: 'Socks5/Http(s) Proxy',
-                  onTap: changeSocks5Proxy,
-                ),
-              if (!hideWebSocket && (!hideServer || !hideProxy)) divider,
-              if (!hideWebSocket)
-                switchWidget(
-                    Icons.web_asset_outlined,
-                    'Use WebSocket',
-                    '${translate('websocket_tip')}\n\n${translate('server-oss-not-support-tip')}',
-                    kOptionAllowWebSocket),
-              if (!isWeb)
-                futureBuilder(
-                  future: bind.mainIsUsingPublicServer(),
-                  hasData: (isUsingPublicServer) {
-                    if (isUsingPublicServer) {
-                      return Offstage();
-                    } else {
-                      return Column(
-                        children: [
-                          if (!hideServer || !hideProxy || !hideWebSocket)
-                            divider,
-                          switchWidget(
-                              Icons.no_encryption_outlined,
-                              'Allow insecure TLS fallback',
-                              'allow-insecure-tls-fallback-tip',
-                              kOptionAllowInsecureTLSFallback),
-                          if (!outgoingOnly) divider,
-                          if (!outgoingOnly)
-                            listTile(
-                              icon: Icons.lan_outlined,
-                              title: 'Disable UDP',
-                              showTooltip: true,
-                              tooltipMessage:
-                                  '${translate('disable-udp-tip')}\n\n${translate('server-oss-not-support-tip')}',
-                              trailing: Switch(
-                                value: bind.mainGetOptionSync(
-                                        key: kOptionDisableUdp) ==
-                                    'Y',
-                                onChanged:
-                                    locked || isOptionFixed(kOptionDisableUdp)
-                                        ? null
-                                        : (value) async {
-                                            await bind.mainSetOption(
-                                                key: kOptionDisableUdp,
-                                                value: value ? 'Y' : 'N');
-                                            setState(() {});
-                                          },
-                              ),
-                            ),
-                        ],
-                      );
-                    }
-                  },
-                ),
-            ],
+        if (personal && !hideProxy)
+          listTile(
+            icon: Icons.network_ping_outlined,
+            title: '代理设置',
+            onTap: changeSocks5Proxy,
           ),
-        ),
+        if (personal && !hideProxy && !hideServer) divider,
+        if (!hideServer)
+          listTile(
+            icon: Icons.dns_outlined,
+            title: personal ? '自建服务器' : 'ID/Relay Server',
+            onTap: () => showServerSettings(gFFI.dialogManager, setState),
+          ),
+        if (!personal && !hideProxy && !hideServer) divider,
+        if (!personal && !hideProxy)
+          listTile(
+            icon: Icons.network_ping_outlined,
+            title: 'Socks5/Http(s) Proxy',
+            onTap: changeSocks5Proxy,
+          ),
+        if (!hideWebSocket && (!hideServer || !hideProxy)) divider,
+        if (!hideWebSocket)
+          switchWidget(
+              Icons.web_asset_outlined,
+              'Use WebSocket',
+              '${translate('websocket_tip')}\n\n${translate('server-oss-not-support-tip')}',
+              kOptionAllowWebSocket),
+        if (!isWeb)
+          futureBuilder(
+            future: bind.mainIsUsingPublicServer(),
+            hasData: (isUsingPublicServer) {
+              if (isUsingPublicServer) {
+                return Offstage();
+              } else {
+                return Column(
+                  children: [
+                    if (!hideServer || !hideProxy || !hideWebSocket) divider,
+                    switchWidget(
+                        Icons.no_encryption_outlined,
+                        'Allow insecure TLS fallback',
+                        'allow-insecure-tls-fallback-tip',
+                        kOptionAllowInsecureTLSFallback),
+                    if (!outgoingOnly) divider,
+                    if (!outgoingOnly)
+                      listTile(
+                        icon: Icons.lan_outlined,
+                        title: 'Disable UDP',
+                        showTooltip: true,
+                        tooltipMessage:
+                            '${translate('disable-udp-tip')}\n\n${translate('server-oss-not-support-tip')}',
+                        trailing: _networkSwitch(
+                          personal,
+                          value:
+                              bind.mainGetOptionSync(key: kOptionDisableUdp) ==
+                                  'Y',
+                          onChanged: locked || isOptionFixed(kOptionDisableUdp)
+                              ? null
+                              : (value) async {
+                                  await bind.mainSetOption(
+                                      key: kOptionDisableUdp,
+                                      value: value ? 'Y' : 'N');
+                                  setState(() {});
+                                },
+                        ),
+                      ),
+                  ],
+                );
+              }
+            },
+          ),
       ],
     );
+    return personal
+        ? _PersonalSettingsCard(children: [controls])
+        : _Card(title: 'Network', children: [controls]);
   }
+
+  Widget _networkSwitch(
+    bool personal, {
+    required bool value,
+    ValueChanged<bool>? onChanged,
+  }) =>
+      personal
+          ? _PersonalSettingsSwitch(value: value, onChanged: onChanged)
+          : Switch(value: value, onChanged: onChanged);
 }
 
 class _Display extends StatefulWidget {
@@ -2605,7 +2760,7 @@ class _AboutState extends State<_About> {
                 height: 8.0,
               ),
               SelectionArea(
-                  child: Text(personal ? '0.1.1 · 基于 RustDesk $version' : '${translate('Version')}: $version')
+                  child: Text(personal ? '0.1.2 · 基于 RustDesk $version' : '${translate('Version')}: $version')
                       .marginSymmetric(vertical: 4.0)),
               SelectionArea(
                   child: Text('${translate('Build Date')}: $buildDate')
@@ -2679,6 +2834,32 @@ Widget _Card(
     {required String title,
     required List<Widget> children,
     List<Widget>? title_suffix}) {
+  return Builder(builder: (context) {
+    if (!_PersonalSettingsScope.enabled(context)) {
+      return _legacySettingCard(
+          title: title, children: children, title_suffix: title_suffix);
+    }
+    return _PersonalSettingsCard(children: [
+      _PersonalSettingsRow(
+        title: translate(title),
+        child: title_suffix == null
+            ? const SizedBox.shrink()
+            : Row(mainAxisSize: MainAxisSize.min, children: title_suffix),
+      ),
+      const Divider(height: 1),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
+      ),
+    ]);
+  });
+}
+
+Widget _legacySettingCard(
+    {required String title,
+    required List<Widget> children,
+    List<Widget>? title_suffix}) {
   return Row(
     children: [
       Flexible(
@@ -2726,6 +2907,8 @@ Widget _OptionCheckBox(
   Future<void> Function(String, bool)? optSetter,
   // Optional widget rendered between the label and the trailing space.
   Widget? trailing,
+  IconData? personalIcon,
+  String? personalDescription,
 }) {
   getOpt() => optGetter != null
       ? optGetter()
@@ -2755,6 +2938,21 @@ Widget _OptionCheckBox(
   if (fakeValue != null) {
     ref.value = fakeValue;
     enabled = false;
+  }
+
+  if (_PersonalSettingsScope.enabled(context)) {
+    return Obx(() => _PersonalSettingsRow(
+          icon: personalIcon,
+          title: translate(label),
+          description: personalDescription,
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            if (trailing != null) trailing,
+            _PersonalSettingsSwitch(
+              value: ref.value,
+              onChanged: enabled && !isOptFixed ? onChanged : null,
+            ),
+          ]),
+        ));
   }
 
   return GestureDetector(
@@ -3045,6 +3243,32 @@ Widget _lock(
   String label,
   Function() onUnlock,
 ) {
+  Future<void> unlock() async {
+    final unlockPin = bind.mainGetUnlockPin();
+    if (unlockPin.isEmpty || isUnlockPinDisabled()) {
+      final checked = await callMainCheckSuperUserPermission();
+      if (checked) onUnlock();
+    } else {
+      checkUnlockPinDialog(unlockPin, onUnlock);
+    }
+  }
+
+  return Builder(builder: (context) {
+    if (_PersonalSettingsScope.enabled(context)) {
+      if (!locked) return const SizedBox.shrink();
+      return _PersonalSettingsCard(children: [
+        _PersonalSettingsRow(
+          title: translate(label),
+          icon: Icons.lock_outline,
+          child: OutlinedButton(onPressed: unlock, child: const Text('解锁')),
+        ),
+      ]);
+    }
+    return _legacyLock(locked, label, unlock);
+  });
+}
+
+Widget _legacyLock(bool locked, String label, VoidCallback unlock) {
   return Offstage(
       offstage: !locked,
       child: Row(
@@ -3065,17 +3289,7 @@ Widget _lock(
                             ),
                             Text(translate(label)).marginOnly(left: 5),
                           ]).marginSymmetric(vertical: 2)),
-                  onPressed: () async {
-                    final unlockPin = bind.mainGetUnlockPin();
-                    if (unlockPin.isEmpty || isUnlockPinDisabled()) {
-                      bool checked = await callMainCheckSuperUserPermission();
-                      if (checked) {
-                        onUnlock();
-                      }
-                    } else {
-                      checkUnlockPinDialog(unlockPin, onUnlock);
-                    }
-                  },
+                  onPressed: unlock,
                 ).marginSymmetric(horizontal: 2, vertical: 4),
               ).marginOnly(left: _kCardLeftMargin),
             ).marginOnly(top: 10),

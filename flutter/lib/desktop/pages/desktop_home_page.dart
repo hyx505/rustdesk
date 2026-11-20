@@ -61,13 +61,13 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   Widget build(BuildContext context) {
     super.build(context);
     final isIncomingOnly = bind.isIncomingOnly();
-    if (isPersonalRemoteWindows && !isIncomingOnly && !bind.isOutgoingOnly()) {
+    if (DesktopTabPage.usesPersonalHome) {
       return _buildBlock(
         child: PersonalHome(
           assistance:
               ConnectionPage(localAssistance: _personalLocalAssistance()),
-          openSettings:
-              bind.isDisableSettings() ? null : DesktopTabPage.onAddSetting,
+          settingsRequest:
+              bind.isDisableSettings() ? null : DesktopTabPage.personalSettings,
         ),
       );
     }

@@ -57,6 +57,7 @@ class KeyboardShortcutsPageBody extends StatefulWidget {
   /// nav tile in Settings, so this page is the only place the user can
   /// flip the master switches.
   final bool showMasterToggles;
+  final bool settingsStyle;
 
   const KeyboardShortcutsPageBody({
     Key? key,
@@ -64,6 +65,7 @@ class KeyboardShortcutsPageBody extends StatefulWidget {
     this.editButtonHint,
     this.headerBanner,
     this.showMasterToggles = true,
+    this.settingsStyle = false,
   }) : super(key: key);
 
   @override
@@ -217,25 +219,28 @@ class KeyboardShortcutsPageBodyState extends State<KeyboardShortcutsPageBody> {
     final theme = Theme.of(context);
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: widget.settingsStyle
+          ? const EdgeInsets.only(bottom: 20)
+          : const EdgeInsets.all(16),
       children: [
         if (widget.headerBanner != null) ...[
           widget.headerBanner!,
           const SizedBox(height: 12),
         ],
-        if (widget.showMasterToggles) ...[
-          _toggleRow(
-            enabled,
-            'Enable keyboard shortcuts in remote session',
-            (v) => _setEnabled(v),
-          ),
-          if (enabled)
+        if (widget.showMasterToggles)
+          _settingsPanel(Column(children: [
             _toggleRow(
-              ShortcutModel.isPassThrough(),
-              'Pass-through to remote',
-              (v) => _setPassThrough(v),
+              enabled,
+              'Enable keyboard shortcuts in remote session',
+              (v) => _setEnabled(v),
             ),
-        ],
+            if (enabled)
+              _toggleRow(
+                ShortcutModel.isPassThrough(),
+                'Pass-through to remote',
+                (v) => _setPassThrough(v),
+              ),
+          ])),
         const SizedBox(height: 8),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -252,10 +257,26 @@ class KeyboardShortcutsPageBodyState extends State<KeyboardShortcutsPageBody> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               for (final group in _groupsForCurrentPlatform())
-                _buildGroup(context, group),
+                _settingsPanel(_buildGroup(context, group)),
             ],
           ),
       ],
+    );
+  }
+
+  Widget _settingsPanel(Widget child) {
+    if (!widget.settingsStyle) return child;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return Card(
+      color: dark ? const Color(0xff252e35) : Colors.white,
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 6),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(5),
+        side:
+            BorderSide(color: dark ? Colors.white12 : const Color(0xffdce2e7)),
+      ),
+      child: Padding(padding: const EdgeInsets.all(8), child: child),
     );
   }
 
@@ -264,13 +285,20 @@ class KeyboardShortcutsPageBodyState extends State<KeyboardShortcutsPageBody> {
       {String? tooltipKey}) {
     return Row(
       children: [
-        Checkbox(
-          value: value,
-          onChanged: (v) async {
-            if (v == null) return;
-            await onChanged(v);
-          },
-        ),
+        if (widget.settingsStyle)
+          Switch(
+              value: value,
+              onChanged: onChanged,
+              activeColor: Colors.white,
+              activeTrackColor: const Color(0xff337bff))
+        else
+          Checkbox(
+            value: value,
+            onChanged: (v) async {
+              if (v == null) return;
+              await onChanged(v);
+            },
+          ),
         const SizedBox(width: 4),
         Expanded(
           child: GestureDetector(

@@ -15,11 +15,21 @@ import '../../common/shared_state.dart';
 class DesktopTabPage extends StatefulWidget {
   const DesktopTabPage({Key? key}) : super(key: key);
 
+  static bool get usesPersonalHome =>
+      isPersonalRemoteWindows &&
+      !bind.isIncomingOnly() &&
+      !bind.isOutgoingOnly();
+  static final personalSettings = ValueNotifier<SettingsTabKey?>(null);
+
   @override
   State<DesktopTabPage> createState() => _DesktopTabPageState();
 
   static void onAddSetting(
       {SettingsTabKey initialPage = SettingsTabKey.general}) {
+    if (usesPersonalHome && !bind.isDisableSettings()) {
+      personalSettings.value = initialPage;
+      return;
+    }
     try {
       DesktopTabController tabController = Get.find<DesktopTabController>();
       tabController.add(TabInfo(
@@ -96,9 +106,7 @@ class _DesktopTabPageState extends State<DesktopTabPage> {
             backgroundColor: Theme.of(context).colorScheme.background,
             body: DesktopTab(
               controller: tabController,
-              personalChrome: isPersonalRemoteWindows &&
-                  !bind.isIncomingOnly() &&
-                  !bind.isOutgoingOnly(),
+              personalChrome: DesktopTabPage.usesPersonalHome,
               tail: Offstage(
                 offstage: bind.isIncomingOnly() || bind.isDisableSettings(),
                 child: ActionIcon(

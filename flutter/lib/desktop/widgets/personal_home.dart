@@ -7,12 +7,13 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/common/formatter/id_formatter.dart';
+import 'package:flutter_hbb/desktop/pages/desktop_setting_page.dart';
 import 'package:flutter_hbb/models/peer_model.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 
 import 'personal_devices.dart';
 
-enum _Page { device, all, assistance, favorites }
+enum _Page { device, all, assistance, favorites, manage, settings }
 
 enum _Action {
   desktop('进入桌面', Icons.desktop_windows_outlined),
@@ -32,11 +33,11 @@ class PersonalHome extends StatefulWidget {
   const PersonalHome({
     super.key,
     required this.assistance,
-    this.openSettings,
+    this.settingsRequest,
   });
 
   final Widget assistance;
-  final VoidCallback? openSettings;
+  final ValueNotifier<SettingsTabKey?>? settingsRequest;
 
   @override
   State<PersonalHome> createState() => _PersonalHomeState();
@@ -56,6 +57,7 @@ class _PersonalHomeState extends State<PersonalHome> {
   bool _homeVisible = true;
   bool _devicesExpanded = true;
   bool _assistanceExpanded = true;
+  bool _manageFavoritesFirst = false;
   late final _shortcuts = bind
       .mainGetLocalOption(key: _shortcutsKey)
       .split(',')
@@ -65,12 +67,17 @@ class _PersonalHomeState extends State<PersonalHome> {
   @override
   void initState() {
     super.initState();
+    if (widget.settingsRequest?.value != null) _page = _Page.settings;
+    widget.settingsRequest?.addListener(_openSettings);
     unawaited(bind.mainLoadFavPeers());
     unawaited(bind.mainLoadRecentPeers());
     unawaited(bind.mainLoadLanPeers());
     unawaited(bind.mainDiscover());
     _poll = Timer.periodic(const Duration(seconds: 8), (_) {
-      if (_page != _Page.device || !_homeVisible) return;
+      if (!_homeVisible ||
+          !const [_Page.device, _Page.all, _Page.favorites].contains(_page)) {
+        return;
+      }
       final ids = _peers().map((peer) => peer.id).take(100).toList();
       if (ids.isNotEmpty) unawaited(bind.queryOnlines(ids: ids));
     });
@@ -84,6 +91,7 @@ class _PersonalHomeState extends State<PersonalHome> {
 
   @override
   void dispose() {
+    widget.settingsRequest?.removeListener(_openSettings);
     _poll.cancel();
     super.dispose();
   }
@@ -107,10 +115,17 @@ class _PersonalHomeState extends State<PersonalHome> {
   }
 
   void _navigate(_Page page, [Peer? peer]) {
+    if (page != _Page.settings) widget.settingsRequest?.value = null;
     setState(() {
+      if (page == _Page.manage)
+        _manageFavoritesFirst = _page == _Page.favorites;
       _page = page;
       _selectedId = peer?.id;
     });
+  }
+
+  void _openSettings() {
+    if (widget.settingsRequest?.value != null) _navigate(_Page.settings);
   }
 
   void _launch(Peer peer, _Action action, {bool forceRelay = false}) {
@@ -182,13 +197,18 @@ class _PersonalHomeState extends State<PersonalHome> {
                         ),
                         if (_page == _Page.device)
                           _device(selected, line, dark),
-                        if (_page == _Page.all)
-                          const PersonalDevices(
-                              key: ValueKey('all-devices'),
-                              startOnRecent: true),
-                        if (_page == _Page.favorites)
-                          const PersonalDevices(
-                              key: ValueKey('favorite-devices')),
+                        if (_page == _Page.all || _page == _Page.favorites)
+                          _deviceList(peers, line, dark),
+                        if (_page == _Page.manage)
+                          PersonalDevices(
+                              startOnRecent: !_manageFavoritesFirst),
+                        if (_page == _Page.settings &&
+                            widget.settingsRequest?.value != null)
+                          DesktopSettingPage(
+                            key: ValueKey(widget.settingsRequest!.value),
+                            initialTabkey: widget.settingsRequest!.value!,
+                            embedded: true,
+                          ),
                       ],
                     ),
                   ),
@@ -231,7 +251,7 @@ class _PersonalHomeState extends State<PersonalHome> {
                 _nav('全部设备', Icons.grid_view_rounded,
                     indent: true,
                     accent: true,
-                    selected: _page == _Page.all,
+                    selected: _page == _Page.all || _page == _Page.manage,
                     onTap: () => _navigate(_Page.all)),
               ],
               const SizedBox(height: 10),
@@ -258,12 +278,14 @@ class _PersonalHomeState extends State<PersonalHome> {
             ],
           ),
         ),
-        if (widget.openSettings != null) ...[
+        if (widget.settingsRequest != null) ...[
           Divider(height: 1, color: line),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 11),
             child: _nav('设置', Icons.settings_outlined,
-                onTap: widget.openSettings!),
+                selected: _page == _Page.settings,
+                onTap: () =>
+                    widget.settingsRequest!.value = SettingsTabKey.general),
           ),
         ],
       ],
@@ -275,6 +297,165 @@ class _PersonalHomeState extends State<PersonalHome> {
         'android' || 'ios' => Icons.smartphone_outlined,
         _ => Icons.desktop_windows_outlined,
       };
+
+  Widget _deviceList(List<Peer> peers, Color line, bool dark) {
+    final favorites = _page == _Page.favorites;
+    final favoriteIds =
+        gFFI.favoritePeersModel.peers.map((peer) => peer.id).toSet();
+    final visible = favorites
+        ? peers.where((peer) => favoriteIds.contains(peer.id)).toList()
+        : peers;
+    final phones = visible
+        .where((peer) =>
+            const ['android', 'ios'].contains(peer.platform.toLowerCase()))
+        .toList();
+    final computers = visible.where((peer) => !phones.contains(peer)).toList();
+    final rowColor = dark ? const Color(0xff252e35) : Colors.white;
+
+    Widget row(Peer? peer) {
+      final name = peer == null ? Platform.localHostname : _name(peer);
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 5),
+        child: Material(
+          color: rowColor,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(5),
+              side: BorderSide(color: line)),
+          child: ListTile(
+            onTap: peer == null
+                ? () => _navigate(_Page.assistance)
+                : () => _navigate(_Page.device, peer),
+            minTileHeight: 64,
+            leading: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                  color: _blue, borderRadius: BorderRadius.circular(5)),
+              child: Icon(
+                  peer == null ? Icons.window_rounded : _deviceIcon(peer),
+                  color: Colors.white,
+                  size: 23),
+            ),
+            title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
+            trailing: peer == null
+                ? const Text('本机', style: TextStyle(color: _blue))
+                : Row(mainAxisSize: MainAxisSize.min, children: [
+                    if (peer.online) const _OnlineDot(size: 8),
+                    const SizedBox(width: 12),
+                    const Icon(Icons.chevron_right, size: 19),
+                  ]),
+          ),
+        ),
+      );
+    }
+
+    return LayoutBuilder(builder: (context, size) {
+      final inset = size.maxWidth > 680 ? 48.0 : 20.0;
+      return Padding(
+        padding: EdgeInsets.fromLTRB(inset, 22, inset, 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(children: [
+              Expanded(
+                  child: Text(favorites ? '收藏设备' : '全部设备',
+                      style: const TextStyle(
+                          fontSize: 29, fontWeight: FontWeight.w700))),
+              if (favorites)
+                OutlinedButton(
+                    onPressed: () => _addFavorite(peers),
+                    child: const Text('添加收藏设备')),
+              IconButton(
+                tooltip: '设备管理',
+                onPressed: () => _navigate(_Page.manage),
+                icon: const Icon(Icons.more_horiz),
+              ),
+            ]),
+            const SizedBox(height: 19),
+            if (favorites && visible.isEmpty)
+              const Expanded(
+                  child: Center(
+                      child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.bookmarks_outlined, color: _blue, size: 52),
+                  SizedBox(height: 14),
+                  Text('暂无收藏'),
+                ],
+              )))
+            else
+              Expanded(
+                  child: ListView(
+                padding: const EdgeInsets.only(bottom: 22),
+                children: [
+                  if (!favorites) ...[
+                    Material(
+                      color: rowColor,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(5),
+                          side: BorderSide(color: line)),
+                      child: ListTile(
+                        leading: const Icon(Icons.info_outline, color: _blue),
+                        title: const Text('添加你的其他设备'),
+                        subtitle: const Text('通过设备 ID 连接后，可将设备加入收藏。'),
+                        trailing: OutlinedButton(
+                          onPressed: () => _navigate(_Page.assistance),
+                          child: const Text('连接设备'),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
+                  if (!favorites || computers.isNotEmpty) ...[
+                    Text('电脑 ${computers.length + (favorites ? 0 : 1)}'),
+                    const SizedBox(height: 9),
+                    if (!favorites) row(null),
+                    ...computers.map(row),
+                  ],
+                  if (phones.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Text('手机／平板 ${phones.length}'),
+                    const SizedBox(height: 9),
+                    ...phones.map(row),
+                  ],
+                ],
+              )),
+          ],
+        ),
+      );
+    });
+  }
+
+  Future<void> _addFavorite(List<Peer> peers) async {
+    final saved = (await bind.mainGetFav()).toSet();
+    if (!mounted) return;
+    final available = peers.where((peer) => !saved.contains(peer.id));
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('添加收藏设备'),
+        children: [
+          for (final peer in available)
+            SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, peer.id),
+                child: Text(_name(peer))),
+          if (available.isEmpty)
+            SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, ''),
+                child: const Text('通过设备 ID 连接')),
+        ],
+      ),
+    );
+    if (!mounted || selected == null) return;
+    if (selected.isEmpty) {
+      _navigate(_Page.assistance);
+      return;
+    }
+    final current = (await bind.mainGetFav()).toSet();
+    current.add(selected);
+    await bind.mainStoreFav(favs: current.toList());
+    await bind.mainLoadFavPeers();
+  }
 
   Widget _nav(
     String label,
@@ -393,7 +574,7 @@ class _PersonalHomeState extends State<PersonalHome> {
                     if (relay) {
                       _launch(peer, _Action.desktop, forceRelay: true);
                     } else {
-                      _navigate(_Page.all);
+                      _navigate(_Page.manage);
                     }
                   },
                   itemBuilder: (_) => const [

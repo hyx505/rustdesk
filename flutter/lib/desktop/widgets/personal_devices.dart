@@ -221,7 +221,7 @@ class _PersonalDevicesState extends State<PersonalDevices> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(widget.startOnRecent ? '全部设备' : '收藏设备',
+          Text('设备管理',
               style: Theme.of(context)
                   .textTheme
                   .headlineMedium
