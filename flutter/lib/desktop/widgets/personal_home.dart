@@ -9,7 +9,9 @@ import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/common/formatter/id_formatter.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_setting_page.dart';
 import 'package:flutter_hbb/models/peer_model.dart';
+import 'package:flutter_hbb/models/personal_device_presence.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'personal_devices.dart';
 
@@ -43,7 +45,10 @@ class PersonalHome extends StatefulWidget {
   State<PersonalHome> createState() => _PersonalHomeState();
 }
 
-class _PersonalHomeState extends State<PersonalHome> {
+class _PersonalHomeState extends State<PersonalHome> with WindowListener {
+  static const _presenceEvent = 'callback_query_onlines';
+  static const _presenceListener = 'personal-device-presence';
+  final _presence = PersonalDevicePresence();
   late final _models = [
     gFFI.favoritePeersModel,
     gFFI.recentPeersModel,
@@ -52,9 +57,11 @@ class _PersonalHomeState extends State<PersonalHome> {
   late final _changes = Listenable.merge(
       [..._models, gFFI.serverModel, gFFI.serverModel.serverId]);
   late final Timer _poll;
+  Timer? _nextQuery;
   _Page _page = _Page.device;
   String? _selectedId;
   bool _homeVisible = true;
+  bool _minimized = false;
   bool _devicesExpanded = true;
   bool _assistanceExpanded = true;
   bool _manageFavoritesFirst = false;
@@ -69,41 +76,87 @@ class _PersonalHomeState extends State<PersonalHome> {
     super.initState();
     if (widget.settingsRequest?.value != null) _page = _Page.settings;
     widget.settingsRequest?.addListener(_openSettings);
+    windowManager.addListener(this);
+    platformFFI.registerEventHandler(_presenceEvent, _presenceListener,
+        (event) async {
+      if (mounted && _presence.apply(event)) setState(() {});
+    });
+    _changes.addListener(_trackPeers);
+    _trackPeers();
     unawaited(bind.mainLoadFavPeers());
     unawaited(bind.mainLoadRecentPeers());
     unawaited(bind.mainLoadLanPeers());
     unawaited(bind.mainDiscover());
-    _poll = Timer.periodic(const Duration(seconds: 8), (_) {
-      if (!_homeVisible ||
-          !const [_Page.device, _Page.all, _Page.favorites].contains(_page)) {
-        return;
-      }
-      final ids = _peers().map((peer) => peer.id).take(100).toList();
-      if (ids.isNotEmpty) unawaited(bind.queryOnlines(ids: ids));
+    _poll = Timer.periodic(const Duration(seconds: 6), (_) {
+      if (!_homeVisible || _minimized) return;
+      _queryPresence();
+      // Repaint expired states even when a query produces no event.
+      if (_presence.queryIds.isNotEmpty) setState(() {});
     });
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final wasVisible = _homeVisible;
     _homeVisible = TickerMode.of(context);
+    if (_homeVisible && !wasVisible) _scheduleQuery();
   }
 
   @override
   void dispose() {
     widget.settingsRequest?.removeListener(_openSettings);
+    windowManager.removeListener(this);
+    platformFFI.unregisterEventHandler(_presenceEvent, _presenceListener);
+    _changes.removeListener(_trackPeers);
+    _nextQuery?.cancel();
     _poll.cancel();
     super.dispose();
   }
 
+  String get _localId => gFFI.serverModel.serverId.text.replaceAll(' ', '');
+  bool get _localReady => gFFI.serverModel.connectStatus == 1;
+
+  void _trackPeers() {
+    if (_presence.track(_peers().map((peer) => peer.id), _localId)) {
+      _scheduleQuery();
+    }
+  }
+
+  void _scheduleQuery() {
+    _nextQuery?.cancel();
+    _nextQuery = Timer(const Duration(milliseconds: 150), _queryPresence);
+  }
+
+  void _queryPresence() {
+    if (!mounted || !_homeVisible || _minimized) return;
+    final ids = _presence.queryIds;
+    if (ids.isNotEmpty) unawaited(bind.queryOnlines(ids: ids));
+  }
+
+  @override
+  void onWindowFocus() {
+    if (!mounted || _minimized) return;
+    setState(() {});
+    _scheduleQuery();
+  }
+
+  @override
+  void onWindowMinimize() => _minimized = true;
+
+  @override
+  void onWindowRestore() {
+    _minimized = false;
+    onWindowFocus();
+  }
+
   List<Peer> _peers() {
-    final self = gFFI.serverModel.serverId.text.replaceAll(' ', '');
+    final self = _localId;
     final peers = <String, Peer>{};
     for (final model in _models) {
       for (final peer in model.peers) {
         if (peer.id.isEmpty || peer.id == self) continue;
-        final previous = peers.putIfAbsent(peer.id, () => peer);
-        if (!previous.online && peer.online) peers[peer.id] = peer;
+        peers.putIfAbsent(peer.id, () => peer);
       }
     }
     return peers.values.toList();
@@ -122,6 +175,9 @@ class _PersonalHomeState extends State<PersonalHome> {
       _page = page;
       _selectedId = peer?.id;
     });
+    if (page == _Page.device || page == _Page.all || page == _Page.favorites) {
+      _scheduleQuery();
+    }
   }
 
   void _openSettings() {
@@ -238,13 +294,15 @@ class _PersonalHomeState extends State<PersonalHome> {
                 if (peers.isEmpty)
                   _nav(Platform.localHostname, Icons.window_rounded,
                       indent: true,
-                      online: gFFI.serverModel.connectStatus == 1,
+                      presence: _localReady
+                          ? DevicePresence.online
+                          : DevicePresence.unknown,
                       selected: _page == _Page.device,
                       onTap: () => _navigate(_Page.device)),
                 for (final peer in peers.take(20))
                   _nav(_name(peer), _deviceIcon(peer),
                       indent: true,
-                      online: peer.online,
+                      presence: _presence.status(peer.id),
                       selected:
                           _page == _Page.device && selected?.id == peer.id,
                       onTap: () => _navigate(_Page.device, peer)),
@@ -314,6 +372,7 @@ class _PersonalHomeState extends State<PersonalHome> {
 
     Widget row(Peer? peer) {
       final name = peer == null ? Platform.localHostname : _name(peer);
+      final status = peer == null ? null : _presence.status(peer.id);
       return Padding(
         padding: const EdgeInsets.only(bottom: 5),
         child: Material(
@@ -337,10 +396,13 @@ class _PersonalHomeState extends State<PersonalHome> {
                   size: 23),
             ),
             title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
-            trailing: peer == null
+            trailing: status == null
                 ? const Text('本机', style: TextStyle(color: _blue))
                 : Row(mainAxisSize: MainAxisSize.min, children: [
-                    if (peer.online) const _OnlineDot(size: 8),
+                    _PresenceDot(status),
+                    const SizedBox(width: 6),
+                    Text(status.label,
+                        style: Theme.of(context).textTheme.bodySmall),
                     const SizedBox(width: 12),
                     const Icon(Icons.chevron_right, size: 19),
                   ]),
@@ -464,7 +526,7 @@ class _PersonalHomeState extends State<PersonalHome> {
     bool selected = false,
     bool indent = false,
     bool accent = false,
-    bool? online,
+    DevicePresence? presence,
     Widget? trailing,
   }) {
     final dark = Theme.of(context).brightness == Brightness.dark;
@@ -496,16 +558,20 @@ class _PersonalHomeState extends State<PersonalHome> {
                     if (indent) ...[
                       SizedBox(
                           width: 9,
-                          child: online == true
-                              ? const _OnlineDot(size: 7)
-                              : null),
+                          child: presence == null
+                              ? null
+                              : Tooltip(
+                                  message: presence.label,
+                                  child:
+                                      Center(child: _PresenceDot(presence)))),
                       const SizedBox(width: 10),
                     ],
                     Icon(icon,
                         size: indent ? 23 : 20,
                         color: accent || selected
                             ? _blue
-                            : online == false
+                            : presence != null &&
+                                    presence != DevicePresence.online
                                 ? const Color(0xff89939a)
                                 : null),
                     const SizedBox(width: 12),
@@ -527,7 +593,10 @@ class _PersonalHomeState extends State<PersonalHome> {
 
   Widget _device(Peer? peer, Color line, bool dark) {
     final self = peer == null;
-    final online = peer?.online ?? (gFFI.serverModel.connectStatus == 1);
+    final status = peer == null
+        ? (_localReady ? DevicePresence.online : DevicePresence.unknown)
+        : _presence.status(peer.id);
+    final label = self ? (_localReady ? '就绪' : '未就绪') : status.label;
     return LayoutBuilder(builder: (context, size) {
       final inset = size.maxWidth > 680 ? 48.0 : 20.0;
       return ListView(
@@ -537,25 +606,23 @@ class _PersonalHomeState extends State<PersonalHome> {
             children: [
               DecoratedBox(
                 decoration: BoxDecoration(
-                    color: const Color(0xff171b1e),
+                    color: status == DevicePresence.online || dark
+                        ? const Color(0xff171b1e)
+                        : const Color(0xffe6ebef),
                     borderRadius: BorderRadius.circular(18)),
                 child: Padding(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    if (online)
-                      const _OnlineDot(size: 8)
-                    else
-                      const Icon(Icons.circle, size: 8, color: Colors.white38),
+                    _PresenceDot(status),
                     const SizedBox(width: 5),
-                    Text(
-                        online
-                            ? '在线'
-                            : self
-                                ? '未就绪'
-                                : '离线',
-                        style:
-                            const TextStyle(color: Colors.white, fontSize: 13)),
+                    Text(label,
+                        style: TextStyle(
+                          color: status == DevicePresence.online || dark
+                              ? Colors.white
+                              : const Color(0xff45515b),
+                          fontSize: 13,
+                        )),
                   ]),
                 ),
               ),
@@ -714,16 +781,26 @@ class _PersonalHomeState extends State<PersonalHome> {
   }
 }
 
-class _OnlineDot extends StatelessWidget {
-  const _OnlineDot({required this.size});
-  final double size;
+class _PresenceDot extends StatelessWidget {
+  const _PresenceDot(this.status);
+  final DevicePresence status;
 
   @override
   Widget build(BuildContext context) => Container(
-        width: size,
-        height: size,
-        decoration: const BoxDecoration(
-            color: Color(0xff21e99a), shape: BoxShape.circle),
+        width: 8,
+        height: 8,
+        decoration: BoxDecoration(
+          color: switch (status) {
+            DevicePresence.online => const Color(0xff23ce85),
+            DevicePresence.offline => const Color(0xff78848e),
+            DevicePresence.checking => const Color(0xffd59023),
+            DevicePresence.unknown => Colors.transparent,
+          },
+          border: status == DevicePresence.unknown
+              ? Border.all(color: const Color(0xff78848e))
+              : null,
+          shape: BoxShape.circle,
+        ),
       );
 }
 
