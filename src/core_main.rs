@@ -373,6 +373,21 @@ pub fn core_main() -> Option<CoreMainAction> {
                 return None;
             }
         } else if args[0] == "--tray" {
+            #[cfg(all(windows, feature = "flutter"))]
+            if crate::get_app_name() == "PersonalRemote"
+                && args.get(1).map(String::as_str)
+                    == Some(crate::platform::windows::PERSONAL_LOGON_ARG)
+                && crate::platform::is_cur_exe_the_installed()
+            {
+                if config::LocalConfig::get_option("personal-remote-open-on-login") == "Y" {
+                    if let Err(error) = crate::run_me(Vec::<String>::new()) {
+                        log::warn!("Could not open PersonalRemote at Windows logon: {error}");
+                    }
+                }
+                if config::Config::get_option("stop-service") == "Y" {
+                    return None;
+                }
+            }
             if !crate::check_process("--tray", true) {
                 crate::tray::start_tray();
             }

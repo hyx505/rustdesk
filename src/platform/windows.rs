@@ -3388,12 +3388,13 @@ pub fn uninstall_service(show_new_window: bool, _: bool) -> bool {
         "
     chcp 65001
     {remove_service}
-    if exist \"%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\{app_name} Tray.lnk\" del /f /q \"%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\{app_name} Tray.lnk\"
+    {remove_tray_startup}
     taskkill /F /IM {broker_exe}
     taskkill /F /IM {app_name}.exe{filter}
     ",
         app_name = crate::get_app_name(),
         broker_exe = WIN_TOPMOST_INJECTED_PROCESS_EXE,
+        remove_tray_startup = get_remove_tray_startup_when_service_stops(),
     );
     if let Err(err) = run_cmds(cmds, false, "uninstall") {
         Config::set_option("stop-service".into(), "".into());
@@ -4092,25 +4093,42 @@ fn get_create_service(exe: &str) -> String {
     }
     let stop = Config::get_option("stop-service") == "Y";
     if stop {
-        format!("
-if exist \"%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\{app_name} Tray.lnk\" del /f /q \"%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\{app_name} Tray.lnk\"
-", app_name = crate::get_app_name())
+        get_remove_tray_startup_when_service_stops()
     } else {
         let exe = escape_nested_cmd_ampersands(exe);
         format!("
 sc create {app_name} binpath= \"\\\"{exe}\\\" --service\" start= auto DisplayName= \"{app_name} Service\"
 sc start {app_name}
-",
-    app_name = crate::get_app_name())
+", app_name = crate::get_app_name())
     }
+}
+
+pub(crate) const PERSONAL_LOGON_ARG: &str = "--personal-logon";
+
+fn get_remove_tray_startup_when_service_stops() -> String {
+    let app_name = crate::get_app_name();
+    if app_name == "PersonalRemote" {
+        // The login shortcut can still open the personal client's main window.
+        return String::new();
+    }
+    format!("
+if exist \"%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\{app_name} Tray.lnk\" del /f /q \"%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\{app_name} Tray.lnk\"
+")
 }
 
 fn run_after_run_cmds(silent: bool) {
     let (_, _, _, exe) = get_install_info();
     if !silent {
         log::debug!("Spawn new window");
-        allow_err!(std::process::Command::new("cmd")
-            .args(&["/c", "timeout", "/t", "2", "&", &format!("{exe}")])
+        let mut command = std::process::Command::new("cmd");
+        if crate::get_app_name() == "PersonalRemote"
+            && Config::get_option("stop-service") == "Y"
+        {
+            // An internal relaunch after Stop is not a new user launch.
+            command.env("PERSONALREMOTE_SKIP_SERVICE_AUTOSTART", "1");
+        }
+        allow_err!(command
+            .args(&["/c", "timeout", "/t", "2", "&", &exe])
             .creation_flags(winapi::um::winbase::CREATE_NO_WINDOW)
             .spawn());
     }

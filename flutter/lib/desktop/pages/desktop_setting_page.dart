@@ -13,6 +13,7 @@ import 'package:flutter_hbb/desktop/pages/desktop_home_page.dart';
 import 'package:flutter_hbb/common/widgets/keyboard_shortcuts/page_body.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_keyboard_shortcuts_page.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_tab_page.dart';
+import 'package:flutter_hbb/desktop/widgets/personal_startup.dart';
 import 'package:flutter_hbb/desktop/widgets/remote_toolbar.dart';
 import 'package:flutter_hbb/mobile/widgets/dialog.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
@@ -433,6 +434,33 @@ class _GeneralState extends State<_General> {
       return ListView(
         padding: const EdgeInsets.only(bottom: 24, right: 1),
         children: [
+          _PersonalSettingsCard(children: [
+            _OptionCheckBox(
+              context,
+              '开机自启动',
+              personalOpenOnLogin,
+              isServer: false,
+              optGetter: () =>
+                  bind.mainGetLocalOption(key: personalOpenOnLogin) == 'Y',
+              enabled: bind.mainIsInstalled(),
+              personalIcon: Icons.power_settings_new_rounded,
+              personalDescription: bind.mainIsInstalled()
+                  ? '登录 Windows 后自动打开自用远控主窗口。'
+                  : '安装自用远控后可启用。',
+            ),
+            const Divider(height: 1),
+            _OptionCheckBox(
+              context,
+              '打开软件时启动远控服务',
+              personalStartServiceOnOpen,
+              isServer: false,
+              optGetter: () =>
+                  bind.mainGetLocalOption(key: personalStartServiceOnOpen) == 'Y',
+              enabled: !isOptionFixed(kOptionStopService),
+              personalIcon: Icons.play_circle_outline,
+              personalDescription: '打开软件时，尝试启动尚未运行的远控服务。',
+            ),
+          ]),
           service(),
           _PersonalSettingsCard(children: [
             _OptionCheckBox(
@@ -2760,7 +2788,7 @@ class _AboutState extends State<_About> {
                 height: 8.0,
               ),
               SelectionArea(
-                  child: Text(personal ? '0.1.4 · 基于 RustDesk $version' : '${translate('Version')}: $version')
+                  child: Text(personal ? '0.1.5 · 基于 RustDesk $version' : '${translate('Version')}: $version')
                       .marginSymmetric(vertical: 4.0)),
               SelectionArea(
                   child: Text('${translate('Build Date')}: $buildDate')

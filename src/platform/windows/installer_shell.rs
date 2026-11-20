@@ -87,8 +87,13 @@ pub(super) fn staged_tray_shortcut_commands(
     icon_location: Option<&str>,
 ) -> ResultType<(String, ProtectedInstallFile)> {
     let filename = format!("{app_name} Tray.lnk");
+    let arguments = if app_name == "PersonalRemote" {
+        format!("--tray {}", super::PERSONAL_LOGON_ARG)
+    } else {
+        "--tray".to_owned()
+    };
     staged_shortcut_commands(
-        shortcut_bytes(exe, Some("--tray"), icon_location)?,
+        shortcut_bytes(exe, Some(&arguments), icon_location)?,
         &filename,
     )
 }
